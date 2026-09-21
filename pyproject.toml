@@ -1,0 +1,10 @@
+[project]
+name = "satellite-operations-planner"
+version = "0.6.0"
+description = "Deterministic satellite constellation operations planner"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = []
+
+[tool.setuptools]
+packages = ["model", "planner", "web"]

@@ -1,174 +1,272 @@
-# Satellite Operations Planners
+# Автономное управление спутниковой группировкой
 
-The model is kept in `model/`; deterministic policies are in `planner/`.
-Run a scenario from the repository root without machine-specific paths:
+Детерминированный планировщик для кейса КосмоХакатона 2026. Система назначает
+аппаратам ожидание, калибровку, передачу данных (`downlink`) или ретрансляцию
+(`relay`), учитывая сроки и приоритеты заданий, энергию, температуру, окна связи,
+отказы и общий лимит наземного сегмента. Оператор может остановить смену на
+границе шага, передать новое событие, продолжить расчёт из фактического
+состояния и сравнить две независимые ветви.
 
-```text
-python -m planner.cli --scenario data/P01_intro.json --output results/p01-baseline.json
-```
+Проект работает на **Python 3.10+ только со стандартной библиотекой**. Внешние
+API, базы данных, облачные модели, секреты и платные сервисы не нужны.
 
-The same command works with `data/P02_shift.json`, `data/P03_energy.json`, or
-`data/P04_demand.json`. Announced events can be included with
-`--events examples/events_demo.json` when the event file belongs to that
-scenario.
+## Быстрая проверка для жюри
 
-The feasibility baseline remains available with the command above. The
-strategic planner is selected with `--planner strategic` and has two explicit
-goals:
+Все команды выполняются из корня репозитория.
 
 ```text
-python -m planner.cli --scenario data/P01_intro.json --planner strategic --goal priority --output results/p01-strategic.json
-python -m planner.cli --scenario data/P01_intro.json --planner strategic --goal revenue --output results/p01-revenue.json
-```
-
-At every step strategic counts locally executable contact windows through each
-job deadline. The count includes announced failures, current availability,
-calibration prerequisites, energy, thermal limits, and the remaining work.
-It then reserves a satellite and job before returning actions, preserves a
-satellite that is the only known future executor for another job, and chooses
-among remaining executors using post-action SOC. The downlink limit is
-enforced without changing the model's downlink rules. `priority`
-lexicographically protects priority-3 work and deadlines before value and
-resource tie-breaks. `revenue` protects work that is at risk of missing its
-deadline, then selects the highest expected on-time value per remaining step;
-urgent critical work remains ahead of non-urgent commercial work. These
-parameters are recorded in strategic metadata (`strategic-v2`).
-
-Compare both policies on the same scenario and event stream:
-
-```text
-python -m planner.cli --scenario data/P01_intro.json --compare --goal revenue --output results/p01-comparison.json
-```
-
-The comparison output contains both summaries and a machine-readable
-strategic-minus-baseline `delta` for completion, revenue, deadlines, safety,
-and blocked commands.
-
-## Experiments and regressions
-
-`planner.analysis` runs baseline and strategic on the same scenario and the
-same events, but submits each event to `PlannerRuntime` only at its
-`at_step`. It emits JSON with summaries, trace reason counters,
-accepted/idle/rejected counters, unfinished jobs, resource indicators,
-execution steps/time, and strategic-minus-baseline deltas:
-
-```text
-python -m planner.analysis --scenario data/P02_shift.json --goal priority
-python -m planner.analysis --scenario data/P03_energy.json --goal revenue
-python -m planner.analysis --scenario data/P04_demand.json --goal revenue --output results/p04-analysis.json
-python -m planner.analysis --scenario data/P02_shift.json --events examples/events_demo.json --goal priority
-```
-
-The output distinguishes an actual rejected command from an intentional idle
-row, a resource-related rejection, and a job unfinished after its deadline.
-An unfinished job is a loss of the recorded greedy execution, not proof that
-no other planner could complete it. The same boundary-driven flow is used for
-the `events_demo` continuation.
-
-The trade-off is visible in the report. Strategic improves throughput on P02
-and P03 and substantially improves P04 revenue, while spending more CPU on
-deadline lookahead. P01 is equal to baseline. On P04, `priority` improves
-completed jobs and critical on-time work but reduces revenue and increases
-below-reserve satellite steps; `revenue` improves commercial value at the cost
-of critical completions. P03 `priority` also increases below-reserve steps.
-These below-reserve states can arise during idle energy drain even though
-commands are checked against the reserve before execution. The report tracks
-blocked commands, brownout, reserve, and critical-SOC states and does not
-interpret missed jobs as proven infeasibility.
-
-The full regression suite includes exact replay, both goals, events-demo,
-synthetic future-window protection, and an 8120-job performance guard:
-
-```text
+python --version
+python scripts/demo.py --output results/demo-result.json
+python model/operations.py --result results/demo-result.json --output replays/demo-replay.json
 python -m unittest discover -s tests -v
 ```
 
-The baseline emits explicit idle commands for every satellite. At each step it
-first calibrates satellites whose calibration age reached the validity limit.
-It then sorts released work by critical/high priority, remaining deadline
-slack, deadline, value, and job ID. For each selected job it checks the model's
-energy, thermal, contact, availability, eligibility, and window rules, while
-reserving each satellite and job once and enforcing the global downlink limit.
-Both policies are deterministic and their exported commands can be checked
-with `model.operations.replay_episode`.
+`demo.py` использует компактный P01: доходит до контрольной границы, вручную
+принимает отказ аппарата, создаёт ветви `priority` и `revenue`, завершает обе,
+проверяет точный replay их `summary` и `trace` и печатает сравнение. Файл из
+`--output` является обычным `cosmo-B-ops-result-1.0`, поэтому непосредственно
+принимается `model/operations.py`. Для суточного P02 запустите:
 
-For interactive execution, `PlannerRuntime` exposes only the current boundary.
-Run to a boundary, submit events manually, and continue without providing a
-future event queue to the planner:
+```text
+python scripts/demo.py --scenario P02
+```
+
+Подробный набор воспроизводимых команд и ожидаемых проверок находится в
+[`examples/README.md`](examples/README.md).
+
+## Архитектура
+
+| Путь | Назначение |
+| --- | --- |
+| `data/` | Четыре исходных сценария `cosmo-B-ops-1.0` |
+| `model/resource_env.py` | Валидация, энергия, температура, допуск и выполнение действий |
+| `model/operations.py` | Сессия, события, журнал, summary, export и точный replay |
+| `planner/baseline.py` | Простое детерминированное правило для контрольного сравнения |
+| `planner/strategic.py` | Основной rolling-horizon планировщик с целями `priority`/`revenue` |
+| `planner/runtime.py` | Пошаговое исполнение, остановка, события, switch и fork |
+| `planner/analysis.py` | Воспроизводимое сравнение baseline и strategic |
+| `planner/cli.py` | Пакетный CLI для расчёта и сравнения |
+| `web/` | Локальный операторский HTTP-сервис и браузерный интерфейс |
+| `scripts/demo.py` | Короткий сценарий демонстрации и replayable export |
+| `tests/` | `unittest`: модель, планировщики, runtime, web, demo и replay |
+
+Модель (`model`) является единственным источником физических и учётных правил.
+Планировщики только выбирают команды. `PlannerRuntime` не хранит очередь будущих
+событий: событие становится видимо алгоритму только после успешного
+`apply_event()` на текущей границе. Все политики детерминированы, случайных seed
+и скрытых настроек нет.
+
+## Сценарии
+
+| Сценарий | Масштаб | Назначение |
+| --- | --- | --- |
+| `P01_intro` | 16 аппаратов, 48 шагов, 18 заданий | Быстрый smoke/demo |
+| `P02_shift` | 48 аппаратов, 288 шагов, 1208 заданий | Обычная суточная смена |
+| `P03_energy` | 48 аппаратов, 288 шагов, 1208 заданий | Дефицит энергии |
+| `P04_demand` | 48 аппаратов, 288 шагов, 8120 заданий | Повышенная нагрузка |
+
+Шаг равен 300 секундам. P04 предназначен для нагрузочной проверки; его большие
+сгенерированные результаты не следует добавлять в git.
+
+## Планировщики и цели
+
+### Baseline
+
+`baseline-v1` является понятной точкой отсчёта. Он сначала калибрует аппараты с
+истёкшим допуском, затем сортирует доступные задания по приоритету, запасу до
+срока, сроку, стоимости и ID. Для назначения выбирается допустимый аппарат с
+наибольшим SOC. Спутник и задание резервируются один раз на шаг, общий лимит
+`downlink` соблюдается до передачи команд модели.
+
+```text
+python -m planner.cli --scenario data/P01_intro.json --planner baseline --output results/p01-baseline.json
+```
+
+### Strategic
+
+`strategic-v2` на каждом шаге оценивает число локально исполнимых окон до срока
+каждого задания. Проекция учитывает известные отказы, контакт, калибровку,
+энергию, температуру и остаток работы. Алгоритм бережёт единственного будущего
+исполнителя, выбирает исполнителя по прогнозному SOC и заранее разрешает
+конфликты спутников, заданий и наземного лимита.
+
+Режимы используют одну модель ограничений:
+
+- `priority`: лексикографически защищает задания приоритета 3 и сроки, затем
+  учитывает стоимость и ресурсы;
+- `revenue`: отдаёт предпочтение рискующим не завершиться заданиям и ожидаемой
+  стоимости на оставшийся шаг, не отодвигая срочную критическую работу.
+
+```text
+python -m planner.cli --scenario data/P01_intro.json --planner strategic --goal priority --output results/p01-priority.json
+python -m planner.cli --scenario data/P01_intro.json --planner strategic --goal revenue --output results/p01-revenue.json
+```
+
+Более сложная стратегия не обязана выигрывать на каждом наборе. На P01 режимы
+дают те же завершения и выручку, что baseline, хотя ресурсная траектория может
+отличаться. На P02/P03 strategic обычно увеличивает пропускную способность; на
+P04 цели демонстрируют компромисс между критическими заданиями, общей выручкой
+и расходом ресурсов. Отчёт описывает фактический результат жадного алгоритма,
+а не доказывает глобальную невыполнимость пропущенных заданий.
+
+## Основной сценарий оператора
+
+Последовательность `create -> advance -> event -> switch/fork -> explain ->
+export` доступна через `PlannerRuntime`, HTTP API и браузер.
+
+1. **Create:** выбрать P01-P04, `strategic`/`baseline` и цель.
+2. **Advance:** выполнить один или несколько шагов либо остановиться строго перед
+   заданным `until_step`.
+3. **Event:** передать одно событие, чей `at_step` равен текущему шагу.
+4. **Switch/Fork:** сменить цель только для будущих шагов или создать независимую
+   ветвь из идентичного фактического состояния.
+5. **Explain:** выбрать уже выполненные шаг и аппарат, увидеть запрошенную и
+   исполненную операцию, причину, энергию, температуру, калибровку и задание.
+6. **Export:** сохранить исходный сценарий, реально полученные события, команды,
+   trace, metadata и summary в JSON.
+
+Минимальный программный пример:
 
 ```python
 from model.resource_env import load
 from planner.runtime import PlannerRuntime
 
-run = PlannerRuntime(load('data/P02_shift.json'), planner='strategic', goal='priority')
-run.run_until(72)                         # stopped before step 72
-run.apply_event({                         # accepted only because step == 72
-    'id': 'manual-job', 'at_step': 72, 'type': 'add_jobs',
-    'jobs': [{
-        'id': 'URGENT-MANUAL', 'kind': 'relay', 'release_step': 72,
-        'deadline_step': 80, 'work_steps': 1,
-        'eligible_satellites': ['S08'], 'priority': 3, 'value_usd': 25,
-    }],
+run = PlannerRuntime(load("data/P02_shift.json"), goal="priority")
+run.run_until(72)
+run.apply_event({
+    "id": "manual-outage",
+    "at_step": 72,
+    "type": "satellite_outage",
+    "satellite_ids": ["S08", "S10"],
+    "end_step": 90,
 })
-run.switch_goal('revenue')
-branch = run.fork('revenue-branch', goal='revenue')
-run.run()                                   # parent and branch are independent
-branch.run()
-branch.export('results/manual-branch.json')
-replayed = branch.replay()
+priority = run.fork("priority", goal="priority")
+revenue = run.fork("revenue", goal="revenue")
+priority.run()
+revenue.run()
+revenue.export("results/revenue-branch.json")
+assert revenue.replay().env.trace == revenue.session.env.trace
 ```
 
-`run.result()` and `run.to_json()` contain only received events, executed
-commands, history, and the current state; they do not contain a future plan.
+`switch_goal()` записывает переключение в metadata/history. `fork()` копирует
+текущий шаг, энергию, температуру, возраст калибровки, прогресс заданий и
+исполненную предысторию; дальнейшие изменения ветвей независимы.
 
-Run the tests with:
-
-```text
-python -m unittest discover -s tests -v
-```
-
-## Operator web service
-
-The operator service uses only the Python 3.10+ standard library. Start it from
-the repository root:
+## Веб-сервис
 
 ```text
 python -m web.app --host 127.0.0.1 --port 8000
 ```
 
-Open `http://127.0.0.1:8000/` in a browser. The page can create a run, advance
-it to a step boundary, accept one event at that boundary, change the goal,
-fork an independent run, inspect summaries and trace explanations, and
-download the current result. Invalid input is shown in the page and returned
-as JSON with an HTTP 400 status; the server remains running.
+Откройте <http://127.0.0.1:8000/>. Интерфейс позволяет создать запуск, двигаться
+по границам, отправлять JSON-событие, менять цель, делать fork, просматривать
+summary/состояния/историю, получать объяснение trace и скачивать result.
 
-The same flow can be driven without a browser. Every event is submitted only
-when its `at_step` equals the run's current step; the service never consumes a
-future event queue:
+Основные HTTP-точки:
 
 ```text
-curl http://127.0.0.1:8000/health
-curl http://127.0.0.1:8000/api/scenarios
-curl -X POST http://127.0.0.1:8000/api/runs -H "Content-Type: application/json" -d "{\"scenario_id\":\"P01_intro\",\"planner\":\"strategic\",\"goal\":\"priority\"}"
-curl -X POST http://127.0.0.1:8000/api/runs/RUN_ID/advance -H "Content-Type: application/json" -d "{\"until_step\":1}"
-curl -X POST http://127.0.0.1:8000/api/runs/RUN_ID/events -H "Content-Type: application/json" -d "{\"id\":\"operator-outage-1\",\"at_step\":1,\"type\":\"satellite_outage\",\"satellite_ids\":[\"S01\"],\"end_step\":3}"
-curl -X POST http://127.0.0.1:8000/api/runs/RUN_ID/advance -H "Content-Type: application/json" -d "{\"steps\":1}"
-curl -X POST http://127.0.0.1:8000/api/runs/RUN_ID/fork -H "Content-Type: application/json" -d "{\"branch_id\":\"revenue-branch\",\"goal\":\"revenue\"}"
-curl "http://127.0.0.1:8000/api/runs/RUN_ID/explain?step=0&satellite_id=S01"
-curl http://127.0.0.1:8000/api/runs/RUN_ID/result
+GET  /health
+GET  /api/scenarios
+POST /api/runs
+GET  /api/runs/{run_id}
+POST /api/runs/{run_id}/advance
+POST /api/runs/{run_id}/events
+POST /api/runs/{run_id}/goal
+POST /api/runs/{run_id}/fork
+GET  /api/runs/{run_id}/explain?step=0&satellite_id=S01
+GET  /api/runs/{run_id}/result
 ```
 
-`RUN_ID` is the ID returned by the create request. The API also accepts a
-validated scenario object as `scenario` in the create payload. Built-in
-scenarios are listed with their satellite, step, and job counts by
-`GET /api/scenarios`. The main run endpoint returns the current observation,
-summary, metadata, and available actions. `GET /api/runs/{id}/explain` reports
-the recorded reason for a concrete trace row, including actual energy,
-temperature, calibration, and job data; it does not turn a model decision into
-a claim of objective impossibility.
+В `POST /api/runs` можно передать встроенный `scenario_id` либо валидированный
+объект `scenario`. Ошибки ввода возвращаются как JSON с HTTP 400 и не повреждают
+запуск. Сервис локальный и не содержит аутентификации.
 
-Run state is intentionally in memory only. Restarting the process removes all
-runs, events, branches, and results. The service limits the number of live
-runs to 32, request JSON to 8 MiB, and custom scenarios to 6 MiB. It is a
-local demonstration/operator surface, not a durable multi-user database or an
-authentication layer.
+## Форматы
+
+### События
+
+Пакетный файл имеет `schema_version: "cosmo-B-events-1.0"`,
+`base_scenario` и массив `events`. Интерактивный runtime/API принимает один
+объект без оболочки. Поддерживаются:
+
+- `add_jobs`: поля `id`, `at_step`, `type`, `jobs`;
+- `satellite_outage`: поля `id`, `at_step`, `type`, `satellite_ids`, `end_step`;
+- `close_downlink`: те же поля интервала, но закрываются только окна downlink.
+
+Интервалы имеют вид `[at_step, end_step)`. ID события должен быть новым,
+сообщение принимается атомарно только на текущем незавершённом шаге. Полный
+пример находится в `examples/events_demo.json` и относится к P02.
+
+### Результат
+
+Экспорт `cosmo-B-ops-result-1.0` содержит:
+
+- `initial_scenario` и его hash;
+- `events` в порядке фактического получения;
+- `commands` только для выполненных шагов;
+- `steps_executed`, `run_metadata`, `summary` и подробный `trace`;
+- для runtime дополнительно `history`, `state_digest` и версию runtime schema.
+
+`summary` включает выполненные/просроченные и критические задания, выручку,
+отклонённые команды, состояния ниже резерва/критического SOC, brownout,
+минимальный и конечный SOC, а также работу в незавершённых заданиях. `trace`
+различает намеренный `idle`, принятую операцию и конкретную причину отклонения.
+
+## Replay
+
+Replay не запускает планировщик: он повторно применяет сохранённые события и
+команды к исходному сценарию и пересчитывает модельный учёт.
+
+```text
+python model/operations.py --result results/demo-result.json --output replays/demo-replay.json
+```
+
+Для корректного результата `summary` и `trace` исходной выгрузки и replay
+совпадают точно. Допускается также раздельный ввод сценария, events и commands;
+пример приведён в `examples/README.md`.
+
+## Эксперименты
+
+Пакетное сравнение summary двух алгоритмов:
+
+```text
+python -m planner.cli --scenario data/P01_intro.json --compare --goal revenue --output results/p01-comparison.json
+```
+
+Расширенный анализ доставляет каждое событие runtime только на его `at_step` и
+добавляет счётчики причин, потерь, незавершённые задания, ресурсные индикаторы,
+время выполнения и delta `strategic - baseline`:
+
+```text
+python -m planner.analysis --scenario data/P03_energy.json --goal revenue --output results/p03-analysis.json
+python -m planner.analysis --scenario data/P02_shift.json --events examples/events_demo.json --goal priority --output results/p02-events-analysis.json
+```
+
+Поле времени является диагностическим и зависит от машины; план, summary и
+trace детерминированы.
+
+## Ограничения
+
+- Все запуски web хранятся **только в памяти** и исчезают после перезапуска.
+- Лимит web-сервиса: 32 живых запуска, 8 MiB на JSON-запрос, 6 MiB на custom
+  scenario.
+- Нет БД, очереди задач, многопользовательской изоляции, TLS и аутентификации.
+- Не рассчитываются орбиты и радиоканалы: окна, солнечная мощность и тепловые
+  условия уже заданы входными рядами.
+- Strategic является детерминированной эвристикой rolling horizon, а не
+  доказательством глобального оптимума.
+- `results/`, `replays/`, кэши, `.env` и IDE-файлы исключены из git.
+
+## Разработка и тесты
+
+Установка зависимостей не требуется. `pyproject.toml` фиксирует Python 3.10+ и
+пустой список runtime dependencies. Проверка из чистого checkout:
+
+```text
+python -m compileall -q model planner web scripts tests
+python -m unittest discover -s tests -v
+python -m planner.cli --scenario data/P01_intro.json --planner strategic --goal priority --output results/smoke.json
+```
+
+GitHub Actions выполняет эти проверки на чистом `ubuntu-latest` для Python 3.10
+и 3.12 без секретов.
