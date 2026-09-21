@@ -50,6 +50,35 @@ reserving each satellite and job once and enforcing the global downlink limit.
 Both policies are deterministic and their exported commands can be checked
 with `model.operations.replay_episode`.
 
+For interactive execution, `PlannerRuntime` exposes only the current boundary.
+Run to a boundary, submit events manually, and continue without providing a
+future event queue to the planner:
+
+```python
+from model.resource_env import load
+from planner.runtime import PlannerRuntime
+
+run = PlannerRuntime(load('data/P02_shift.json'), planner='strategic', goal='priority')
+run.run_until(72)                         # stopped before step 72
+run.apply_event({                         # accepted only because step == 72
+    'id': 'manual-job', 'at_step': 72, 'type': 'add_jobs',
+    'jobs': [{
+        'id': 'URGENT-MANUAL', 'kind': 'relay', 'release_step': 72,
+        'deadline_step': 80, 'work_steps': 1,
+        'eligible_satellites': ['S08'], 'priority': 3, 'value_usd': 25,
+    }],
+})
+run.switch_goal('revenue')
+branch = run.fork('revenue-branch', goal='revenue')
+run.run()                                   # parent and branch are independent
+branch.run()
+branch.export('results/manual-branch.json')
+replayed = branch.replay()
+```
+
+`run.result()` and `run.to_json()` contain only received events, executed
+commands, history, and the current state; they do not contain a future plan.
+
 Run the tests with:
 
 ```text
