@@ -167,6 +167,20 @@ def explain_trace(run: PlannerRuntime, step: int, satellite_id: str) -> dict[str
     requested = row.get("requested", {})
     job_id = requested.get("job_id") if isinstance(requested, dict) else None
     job = copy.deepcopy(run.env.jobs.get(job_id)) if job_id else None
+    reason = row.get("reason")
+    if reason == "idle":
+        outcome_category = "idle"
+    elif reason == "accepted":
+        outcome_category = "executed"
+    elif reason in {"energy_reserve", "thermal_limit", "satellite_unavailable",
+                    "no_contact", "ground_capacity"}:
+        outcome_category = "resource_deficit"
+    else:
+        outcome_category = "command_rejected"
+    deadline_missed = bool(
+        job and job.get("completed_step") is None
+        and job.get("deadline_step", run.current_step + 1) <= run.current_step
+    )
     descriptions = {
         "idle": "No payload was requested for this satellite at this step.",
         "accepted": "The requested operation passed the model checks and was executed.",
@@ -186,8 +200,10 @@ def explain_trace(run: PlannerRuntime, step: int, satellite_id: str) -> dict[str
         "satellite_id": satellite_id,
         "requested": copy.deepcopy(row.get("requested")),
         "executed": row.get("executed"),
-        "reason": row.get("reason"),
-        "explanation": descriptions.get(row.get("reason"), "The operation was evaluated by the runtime at this step."),
+        "reason": reason,
+        "outcome_category": outcome_category,
+        "deadline_missed": deadline_missed,
+        "explanation": descriptions.get(reason, "The operation was evaluated by the runtime at this step."),
         "record": copy.deepcopy(row),
         "energy": {
             "before_wh": row.get("energy_before_wh"),

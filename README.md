@@ -24,12 +24,15 @@ python -m planner.cli --scenario data/P01_intro.json --planner strategic --goal 
 At every step strategic counts locally executable contact windows through each
 job deadline. The count includes announced failures, current availability,
 calibration prerequisites, energy, thermal limits, and the remaining work.
-It then reserves a satellite and job before returning actions, and enforces
-the downlink limit without changing the model's downlink rules. `priority`
+It then reserves a satellite and job before returning actions, preserves a
+satellite that is the only known future executor for another job, and chooses
+among remaining executors using post-action SOC. The downlink limit is
+enforced without changing the model's downlink rules. `priority`
 lexicographically protects priority-3 work and deadlines before value and
 resource tie-breaks. `revenue` protects work that is at risk of missing its
 deadline, then selects the highest expected on-time value per remaining step;
-urgent critical work remains ahead of non-urgent commercial work.
+urgent critical work remains ahead of non-urgent commercial work. These
+parameters are recorded in strategic metadata (`strategic-v2`).
 
 Compare both policies on the same scenario and event stream:
 
@@ -40,6 +43,45 @@ python -m planner.cli --scenario data/P01_intro.json --compare --goal revenue --
 The comparison output contains both summaries and a machine-readable
 strategic-minus-baseline `delta` for completion, revenue, deadlines, safety,
 and blocked commands.
+
+## Experiments and regressions
+
+`planner.analysis` runs baseline and strategic on the same scenario and the
+same events, but submits each event to `PlannerRuntime` only at its
+`at_step`. It emits JSON with summaries, trace reason counters,
+accepted/idle/rejected counters, unfinished jobs, resource indicators,
+execution steps/time, and strategic-minus-baseline deltas:
+
+```text
+python -m planner.analysis --scenario data/P02_shift.json --goal priority
+python -m planner.analysis --scenario data/P03_energy.json --goal revenue
+python -m planner.analysis --scenario data/P04_demand.json --goal revenue --output results/p04-analysis.json
+python -m planner.analysis --scenario data/P02_shift.json --events examples/events_demo.json --goal priority
+```
+
+The output distinguishes an actual rejected command from an intentional idle
+row, a resource-related rejection, and a job unfinished after its deadline.
+An unfinished job is a loss of the recorded greedy execution, not proof that
+no other planner could complete it. The same boundary-driven flow is used for
+the `events_demo` continuation.
+
+The trade-off is visible in the report. Strategic improves throughput on P02
+and P03 and substantially improves P04 revenue, while spending more CPU on
+deadline lookahead. P01 is equal to baseline. On P04, `priority` improves
+completed jobs and critical on-time work but reduces revenue and increases
+below-reserve satellite steps; `revenue` improves commercial value at the cost
+of critical completions. P03 `priority` also increases below-reserve steps.
+These below-reserve states can arise during idle energy drain even though
+commands are checked against the reserve before execution. The report tracks
+blocked commands, brownout, reserve, and critical-SOC states and does not
+interpret missed jobs as proven infeasibility.
+
+The full regression suite includes exact replay, both goals, events-demo,
+synthetic future-window protection, and an 8120-job performance guard:
+
+```text
+python -m unittest discover -s tests -v
+```
 
 The baseline emits explicit idle commands for every satellite. At each step it
 first calibrates satellites whose calibration age reached the validity limit.

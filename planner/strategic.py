@@ -9,7 +9,7 @@ from model.operations import Session
 
 
 IDLE = {'action': 'idle'}
-STRATEGIC_VERSION = 'strategic-v1'
+STRATEGIC_VERSION = 'strategic-v2'
 
 
 class StrategicPlanner:
@@ -30,6 +30,8 @@ class StrategicPlanner:
             'horizon': 'job_deadline',
             'resource_projection': 'work_when_feasible_else_idle',
             'priority_3_protection': True,
+            'future_executor_scarcity': True,
+            'executor_energy_score': 'post_action_soc',
         }
 
     def plan(self, session: Session) -> dict[str, dict[str, str]]:
@@ -79,9 +81,18 @@ class StrategicPlanner:
                 if not ok:
                     continue
                 capacity = profiles[job['id']]['capacity'].get(sid, 0)
-                # Prefer executors that do not hold the only current contact
-                # for another, still unassigned job.
-                energy_ratio = env.state[sid]['energy_wh'] / env.sats[sid]['capacity_wh']
+                # Preserve an executor if it is the only known feasible unit
+                # for another job before preferring the strongest assignment.
+                future_exclusive = sum(
+                    other['id'] != job['id']
+                    and other['id'] not in reserved_jobs
+                    and profiles[other['id']]['capacity'].get(sid, 0) > 0
+                    and sum(
+                        profiles[other['id']]['capacity'].get(other_sid, 0) > 0
+                        for other_sid in other['eligible_satellites']
+                    ) == 1
+                    for other in jobs
+                )
                 exclusive = sum(
                     other['id'] != job['id']
                     and other['id'] not in reserved_jobs
@@ -90,7 +101,15 @@ class StrategicPlanner:
                     and env.s['environment'][sid][other['kind'] + '_available'][step]
                     for other in jobs
                 )
-                candidate_key = (exclusive, -capacity, -energy_ratio, sid)
+                energy, _, _, _ = env.transition(sid, env.sats[sid][job['kind'] + '_w'])
+                post_action_soc = energy / env.sats[sid]['capacity_wh']
+                candidate_key = (
+                    future_exclusive,
+                    exclusive,
+                    -capacity,
+                    -post_action_soc,
+                    sid,
+                )
                 candidates.append((candidate_key, sid))
 
             if not candidates:
@@ -248,9 +267,9 @@ class StrategicPlanner:
                 job['id'],
             )
 
-        # Reject currently impossible completions before valuing work. Among
-        # feasible jobs, protect urgent critical work; then maximize expected
-        # on-time value, with contact slack only breaking value ties.
+        # Rank work whose independent capacity projection falls short later;
+        # this is a greedy estimate, not proof of infeasibility. Protect
+        # urgent critical work, then prefer value per remaining step.
         value_density = job['value_usd'] / max(job['remaining_steps'], 1)
         return (
             int(profile['slack'] < 0),

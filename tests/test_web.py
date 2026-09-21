@@ -4,8 +4,11 @@ import json
 import threading
 import unittest
 from http.client import HTTPConnection
+from pathlib import Path
 
-from web.app import OperatorServer, OperatorService
+from model.resource_env import load
+from planner.runtime import PlannerRuntime
+from web.app import OperatorServer, OperatorService, explain_trace
 
 
 class WebApiTests(unittest.TestCase):
@@ -97,6 +100,33 @@ class WebApiTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(result["steps_executed"], 3)
         self.assertIn("trace", result)
+
+    def test_explain_distinguishes_rejection_resource_idle_and_deadline(self) -> None:
+        scenario = load(Path(__file__).resolve().parents[1] / 'data' / 'P01_intro.json')
+        scenario['time']['steps'] = 2
+        scenario['satellites'] = [scenario['satellites'][0]]
+        scenario['environment'] = {'S01': {
+            key: values[:2] for key, values in scenario['environment']['S01'].items()
+        }}
+        scenario['environment']['S01']['downlink_available'] = [False, False]
+        scenario['jobs'] = [{
+            'id': 'MISSED', 'kind': 'downlink', 'release_step': 0,
+            'deadline_step': 1, 'work_steps': 1,
+            'eligible_satellites': ['S01'], 'priority': 3, 'value_usd': 10,
+        }]
+        scenario['failures'] = []
+        run = PlannerRuntime(scenario)
+        run.session.advance({'S01': {'action': 'job', 'job_id': 'MISSED'}})
+        explanation = explain_trace(run, 0, 'S01')
+        self.assertEqual(explanation['outcome_category'], 'resource_deficit')
+        self.assertTrue(explanation['deadline_missed'])
+        self.assertEqual(explanation['reason'], 'no_contact')
+
+        run.env.state['S01']['energy_wh'] = 0.0
+        run.session.advance({'S01': {'action': 'calibrate'}})
+        explanation = explain_trace(run, 1, 'S01')
+        self.assertEqual(explanation['outcome_category'], 'resource_deficit')
+        self.assertEqual(explanation['reason'], 'energy_reserve')
 
 
 if __name__ == "__main__":

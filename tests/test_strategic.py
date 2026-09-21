@@ -129,6 +129,32 @@ class StrategicTests(unittest.TestCase):
         actions = StrategicPlanner('revenue').plan(Session(scenario))
         self.assertEqual(actions['S01'], {'action': 'job', 'job_id': 'VIABLE'})
 
+    def test_future_executor_scarcity_preserves_a_later_window(self) -> None:
+        scenario = compact_scenario([
+            job('FLEXIBLE', 3, 10.0, work=1, deadline=1),
+            job('SCARCE', 1, 20.0, work=1, deadline=2),
+        ], steps=3)
+        satellite = copy.deepcopy(scenario['satellites'][0])
+        satellite['id'] = 'S02'
+        scenario['satellites'].append(satellite)
+        scenario['environment']['S02'] = copy.deepcopy(scenario['environment']['S01'])
+        scenario['jobs'][0]['kind'] = 'relay'
+        scenario['jobs'][0]['eligible_satellites'] = ['S01', 'S02']
+        scenario['jobs'][1]['kind'] = 'downlink'
+        scenario['jobs'][1]['eligible_satellites'] = ['S01']
+        scenario['environment']['S01']['downlink_available'] = [False, True, False]
+        scenario['satellites'][0]['initial_soc_pct'] = 39.0
+        scenario['satellites'][1]['initial_soc_pct'] = 38.0
+        for environment in scenario['environment'].values():
+            environment['solar_w'] = [0.0] * 3
+
+        baseline = run_baseline(scenario)
+        strategic = run_strategic(scenario, goal='priority')
+
+        self.assertNotIn('SCARCE', baseline.env.completed)
+        self.assertIn('SCARCE', strategic.env.completed)
+        self.assertEqual(strategic.summary()['blocked_command_count'], 0)
+
     def test_future_event_not_used_until_announced_and_replays(self) -> None:
         scenario = compact_scenario([job('DOWNLINK', 1, 10.0, work=2)])
         event = {
@@ -180,6 +206,11 @@ class StrategicTests(unittest.TestCase):
                 self.assertEqual(session.run_metadata['goal'], goal)
                 self.assertIn('version', session.run_metadata)
                 self.assertIn('parameters', session.run_metadata)
+                self.assertTrue(session.run_metadata['parameters']['future_executor_scarcity'])
+                self.assertEqual(
+                    session.run_metadata['parameters']['executor_energy_score'],
+                    'post_action_soc',
+                )
                 self.assertEqual(session.summary()['blocked_command_count'], 0)
 
     def test_comparison_contains_machine_readable_delta(self) -> None:
