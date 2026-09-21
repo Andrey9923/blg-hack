@@ -1,0 +1,138 @@
+{
+  "schema_version": "cosmo-B-events-1.0",
+  "base_scenario": "P02_shift",
+  "events": [
+    {
+      "id": "E-01",
+      "at_step": 72,
+      "type": "add_jobs",
+      "jobs": [
+        {
+          "id": "URG-P-01",
+          "kind": "relay",
+          "release_step": 72,
+          "deadline_step": 80,
+          "work_steps": 3,
+          "eligible_satellites": [
+            "S08",
+            "S10",
+            "S12"
+          ],
+          "priority": 3,
+          "value_usd": 40
+        },
+        {
+          "id": "URG-P-02",
+          "kind": "relay",
+          "release_step": 72,
+          "deadline_step": 82,
+          "work_steps": 4,
+          "eligible_satellites": [
+            "S08",
+            "S10",
+            "S12"
+          ],
+          "priority": 3,
+          "value_usd": 70
+        },
+        {
+          "id": "URG-P-03",
+          "kind": "downlink",
+          "release_step": 72,
+          "deadline_step": 84,
+          "work_steps": 1,
+          "eligible_satellites": [
+            "S01"
+          ],
+          "priority": 3,
+          "value_usd": 30
+        }
+      ]
+    },
+    {
+      "id": "E-02",
+      "at_step": 74,
+      "type": "satellite_outage",
+      "satellite_ids": [
+        "S08",
+        "S10"
+      ],
+      "end_step": 90
+    },
+    {
+      "id": "E-03",
+      "at_step": 144,
+      "type": "close_downlink",
+      "satellite_ids": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07",
+        "S08",
+        "S09",
+        "S10",
+        "S11",
+        "S12",
+        "S13",
+        "S14",
+        "S15",
+        "S16",
+        "S17",
+        "S18",
+        "S19",
+        "S20",
+        "S21",
+        "S22",
+        "S23",
+        "S24",
+        "S25",
+        "S26",
+        "S27",
+        "S28",
+        "S29",
+        "S30",
+        "S31",
+        "S32",
+        "S33",
+        "S34",
+        "S35",
+        "S36",
+        "S37",
+        "S38",
+        "S39",
+        "S40",
+        "S41",
+        "S42",
+        "S43",
+        "S44",
+        "S45",
+        "S46",
+        "S47",
+        "S48"
+      ],
+      "end_step": 156
+    },
+    {
+      "id": "E-04",
+      "at_step": 146,
+      "type": "add_jobs",
+      "jobs": [
+        {
+          "id": "URG-P-04",
+          "kind": "downlink",
+          "release_step": 146,
+          "deadline_step": 150,
+          "work_steps": 2,
+          "eligible_satellites": [
+            "S03"
+          ],
+          "priority": 3,
+          "value_usd": 50
+        }
+      ]
+    }
+  ]
+}
