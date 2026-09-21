@@ -84,3 +84,49 @@ Run the tests with:
 ```text
 python -m unittest discover -s tests -v
 ```
+
+## Operator web service
+
+The operator service uses only the Python 3.10+ standard library. Start it from
+the repository root:
+
+```text
+python -m web.app --host 127.0.0.1 --port 8000
+```
+
+Open `http://127.0.0.1:8000/` in a browser. The page can create a run, advance
+it to a step boundary, accept one event at that boundary, change the goal,
+fork an independent run, inspect summaries and trace explanations, and
+download the current result. Invalid input is shown in the page and returned
+as JSON with an HTTP 400 status; the server remains running.
+
+The same flow can be driven without a browser. Every event is submitted only
+when its `at_step` equals the run's current step; the service never consumes a
+future event queue:
+
+```text
+curl http://127.0.0.1:8000/health
+curl http://127.0.0.1:8000/api/scenarios
+curl -X POST http://127.0.0.1:8000/api/runs -H "Content-Type: application/json" -d "{\"scenario_id\":\"P01_intro\",\"planner\":\"strategic\",\"goal\":\"priority\"}"
+curl -X POST http://127.0.0.1:8000/api/runs/RUN_ID/advance -H "Content-Type: application/json" -d "{\"until_step\":1}"
+curl -X POST http://127.0.0.1:8000/api/runs/RUN_ID/events -H "Content-Type: application/json" -d "{\"id\":\"operator-outage-1\",\"at_step\":1,\"type\":\"satellite_outage\",\"satellite_ids\":[\"S01\"],\"end_step\":3}"
+curl -X POST http://127.0.0.1:8000/api/runs/RUN_ID/advance -H "Content-Type: application/json" -d "{\"steps\":1}"
+curl -X POST http://127.0.0.1:8000/api/runs/RUN_ID/fork -H "Content-Type: application/json" -d "{\"branch_id\":\"revenue-branch\",\"goal\":\"revenue\"}"
+curl "http://127.0.0.1:8000/api/runs/RUN_ID/explain?step=0&satellite_id=S01"
+curl http://127.0.0.1:8000/api/runs/RUN_ID/result
+```
+
+`RUN_ID` is the ID returned by the create request. The API also accepts a
+validated scenario object as `scenario` in the create payload. Built-in
+scenarios are listed with their satellite, step, and job counts by
+`GET /api/scenarios`. The main run endpoint returns the current observation,
+summary, metadata, and available actions. `GET /api/runs/{id}/explain` reports
+the recorded reason for a concrete trace row, including actual energy,
+temperature, calibration, and job data; it does not turn a model decision into
+a claim of objective impossibility.
+
+Run state is intentionally in memory only. Restarting the process removes all
+runs, events, branches, and results. The service limits the number of live
+runs to 32, request JSON to 8 MiB, and custom scenarios to 6 MiB. It is a
+local demonstration/operator surface, not a durable multi-user database or an
+authentication layer.

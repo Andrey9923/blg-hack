@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Planner Runtime Operator</title>
+  <style>
+    :root { color-scheme: light; font-family: system-ui, -apple-system, sans-serif; background: #f4f6f8; color: #1c2733; }
+    body { margin: 0; } main { max-width: 1200px; margin: auto; padding: 20px; }
+    header { background: #17324d; color: #fff; padding: 18px 20px; } h1 { margin: 0; font-size: 1.45rem; }
+    .grid { display: grid; grid-template-columns: minmax(260px, 360px) 1fr; gap: 16px; align-items: start; }
+    section, .card { background: white; border: 1px solid #d5dde5; border-radius: 8px; padding: 16px; box-shadow: 0 1px 2px #1221  }
+    label { display: block; font-weight: 600; margin: 10px 0 5px; } select, input, textarea, button { font: inherit; }
+    select, input, textarea { width: 100%; box-sizing: border-box; border: 1px solid #aebbc7; border-radius: 5px; padding: 8px; }
+    textarea { min-height: 150px; font-family: ui-monospace, monospace; font-size: .86rem; }
+    button { border: 0; border-radius: 5px; background: #1769aa; color: #fff; padding: 8px 12px; margin: 5px 4px 0 0; cursor: pointer; }
+    button.secondary { background: #526273; } button.warn { background: #a34d23; } button:disabled { opacity: .5; cursor: default; }
+    .status { min-height: 1.5em; margin: 8px 0; padding: 8px; border-radius: 5px; background: #edf2f6; white-space: pre-wrap; }
+    .error { background: #ffe8e5; color: #8a2015; } .ok { background: #e5f4e9; color: #145c29; }
+    .mono { font-family: ui-monospace, monospace; word-break: break-all; } pre { overflow: auto; background: #17212b; color: #e7eef5; padding: 12px; border-radius: 5px; max-height: 500px; }
+    .tables { overflow-x: auto; } table { border-collapse: collapse; width: 100%; font-size: .88rem; } th, td { border-bottom: 1px solid #d5dde5; padding: 6px; text-align: left; white-space: nowrap; }
+    .muted { color: #5f6d7a; font-size: .9rem; } h2 { font-size: 1.1rem; margin-top: 0; }
+    @media (max-width: 760px) { main { padding: 10px; } .grid { grid-template-columns: 1fr; } section, .card { padding: 12px; } }
+  </style>
+</head>
+<body>
+<header><h1>Planner Runtime Operator</h1></header>
+<main>
+  <div class="grid">
+    <section>
+      <h2>Новый запуск</h2>
+      <label for="scenario">Сценарий</label><select id="scenario"></select>
+      <p id="scenarioInfo" class="muted"></p>
+      <label for="goal">Цель</label><select id="goal"><option value="priority">priority</option><option value="revenue">revenue</option></select>
+      <label for="planner">Планировщик</label><select id="planner"><option value="strategic">strategic</option><option value="baseline">baseline</option></select>
+      <button onclick="createRun()">Создать запуск</button>
+      <hr>
+      <label for="runId">Текущий run_id</label><input id="runId" placeholder="создайте запуск">
+      <button class="secondary" onclick="refresh()">Обновить</button>
+      <button class="secondary" onclick="downloadResult()">Скачать result</button>
+      <p id="status" class="status">Сервис готов. Создайте запуск.</p>
+    </section>
+    <section>
+      <h2>Управление границей</h2>
+      <div><button onclick="advanceSteps()">Выполнить шаги</button><input id="steps" type="number" min="0" value="1" style="width:90px"></div>
+      <div><button onclick="advanceUntil()">Выполнить до шага</button><input id="until" type="number" min="0" value="1" style="width:90px"></div>
+      <label for="event">JSON-событие на текущем шаге</label>
+      <textarea id="event">{
+  "id": "operator-outage-1",
+  "at_step": 0,
+  "type": "satellite_outage",
+  "satellite_ids": ["S01"],
+  "end_step": 2
+}</textarea><button class="warn" onclick="sendEvent()">Принять событие</button>
+      <label for="newGoal">Переключить цель</label><select id="newGoal"><option value="priority">priority</option><option value="revenue">revenue</option></select>
+      <button onclick="switchGoal()">Переключить</button><button onclick="forkRun()">Fork</button>
+    </section>
+  </div>
+  <section style="margin-top:16px"><h2>Текущее состояние</h2><div id="summary" class="tables"></div><h3>Спутники</h3><div id="satellites" class="tables"></div><h3>Задания</h3><div id="jobs" class="tables"></div><h3>История</h3><div id="history" class="tables"></div><details><summary>Полное observation JSON</summary><pre id="observation">Нет запуска.</pre></details></section>
+  <section style="margin-top:16px"><h2>Объяснение trace</h2><label for="explainStep">Шаг</label><input id="explainStep" type="number" min="0" value="0"><label for="explainSat">Спутник</label><input id="explainSat" value="S01"><button onclick="explain()">Объяснить</button><pre id="explanation">Выберите существующую запись trace.</pre></section>
+</main>
+<script>
+let scenarios = [];
+const $ = id => document.getElementById(id);
+async function api(url, options = {}) { const response = await fetch(url, {headers: {'Content-Type':'application/json'}, ...options}); const data = await response.json(); if (!response.ok) throw new Error(data.message || JSON.stringify(data)); return data; }
+function show(message, error=false) { $('status').textContent = message; $('status').className = 'status ' + (error ? 'error' : 'ok'); }
+async function loadScenarios() { try { const data = await api('/api/scenarios'); scenarios = data.scenarios; $('scenario').innerHTML = scenarios.map(s => `<option value="${s.id}">${s.id}: ${s.title}</option>`).join(''); updateScenario(); } catch(e) { show(e.message, true); } }
+function updateScenario() { const s = scenarios.find(x => x.id === $('scenario').value); if (s) $('scenarioInfo').textContent = `${s.satellites} спутников, ${s.steps} шагов, ${s.jobs} заданий`; }
+async function createRun() { try { const data = await api('/api/runs', {method:'POST', body: JSON.stringify({scenario_id:$('scenario').value, goal:$('goal').value, planner:$('planner').value})}); $('runId').value = data.run_id; show(`Создан ${data.run_id}`); render(data); } catch(e) { show(e.message, true); } }
+function id() { if (!$('runId').value) throw new Error('Сначала создайте запуск'); return encodeURIComponent($('runId').value); }
+async function refresh() { try { render(await api(`/api/runs/${id()}`)); show('Состояние обновлено'); } catch(e) { show(e.message, true); } }
+async function advance(payload) { try { const data = await api(`/api/runs/${id()}/advance`, {method:'POST', body:JSON.stringify(payload)}); render(data); show(`Текущий шаг: ${data.observation.step}`); } catch(e) { show(e.message, true); } }
+function advanceSteps() { advance({steps:Number($('steps').value)}); } function advanceUntil() { advance({until_step:Number($('until').value)}); }
+async function sendEvent() { try { const data = await api(`/api/runs/${id()}/events`, {method:'POST', body:$('event').value}); render(data); show('Событие принято на текущей границе'); } catch(e) { show(e.message, true); } }
+async function switchGoal() { try { const data = await api(`/api/runs/${id()}/goal`, {method:'POST', body:JSON.stringify({goal:$('newGoal').value})}); render(data); show('Цель переключена'); } catch(e) { show(e.message, true); } }
+async function forkRun() { try { const data = await api(`/api/runs/${id()}/fork`, {method:'POST', body:JSON.stringify({goal:$('newGoal').value})}); $('runId').value = data.run_id; render(data); show(`Создана независимая ветвь ${data.run_id}`); } catch(e) { show(e.message, true); } }
+async function downloadResult() { try { const data = await api(`/api/runs/${id()}/result`); const blob = new Blob([JSON.stringify(data,null,2)], {type:'application/json'}); const a = document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`${$('runId').value.replaceAll('/','-')}.json`; a.click(); URL.revokeObjectURL(a.href); } catch(e) { show(e.message, true); } }
+async function explain() { try { const data = await api(`/api/runs/${id()}/explain?step=${encodeURIComponent($('explainStep').value)}&satellite_id=${encodeURIComponent($('explainSat').value)}`); $('explanation').textContent=JSON.stringify(data,null,2); } catch(e) { show(e.message, true); } }
+function table(headers, rows) { return '<table><thead><tr>' + headers.map(h=>`<th>${h}</th>`).join('') + '</tr></thead><tbody>' + rows.map(row=>'<tr>'+row.map(v=>`<td>${typeof v === 'object' ? JSON.stringify(v) : (v ?? '')}</td>`).join('')+'</tr>').join('')+'</tbody></table>'; }
+function render(data) { const obs=data.observation || {}; $('observation').textContent = JSON.stringify(obs, null, 2); if (data.summary) { $('summary').innerHTML = table(['Показатель','Значение'], Object.entries(data.summary).map(([k,v])=>[k,v])); } const states=obs.state || {}; $('satellites').innerHTML=table(['ID','Energy Wh','Temperature C','Calibration age','Available'], Object.entries(states).map(([sid,s])=>[sid,s.energy_wh?.toFixed?.(2) ?? s.energy_wh,s.temp_c?.toFixed?.(2) ?? s.temp_c,s.calibration_age_steps,obs.available?.[sid]])); const jobs=obs.jobs || {}; $('jobs').innerHTML=table(['ID','Kind','Remaining','Release','Deadline','Priority','Completed'], Object.entries(jobs).map(([jid,j])=>[jid,j.kind,j.remaining_steps,j.release_step,j.deadline_step,j.priority,j.completed_step])); const history=data.history || []; $('history').innerHTML=history.length ? table(['Type','Step','Detail'], history.map(h=>[h.type,h.step,h.reason || h.to || (h.commands ? `${h.commands.length} commands` : h.event ? h.event.type : '')])) : '<p class="muted">История появится после шага, события или переключения цели.</p>'; }
+$('scenario').addEventListener('change', updateScenario); loadScenarios();
+</script>
+</body>
+</html>
