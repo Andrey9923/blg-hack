@@ -21,9 +21,9 @@ class PersistentApiTests(unittest.TestCase):
         self.servers = []
         self.port = self.start_server()
 
-    def start_server(self, auth=False):
+    def start_server(self):
         server = OperatorServer(('127.0.0.1', 0), OperatorService(SQLiteRunStore(Database(self.path))),
-                                auth_database=self.database if auth else None)
+                                )
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         self.servers.append((server, thread))
@@ -36,19 +36,17 @@ class PersistentApiTests(unittest.TestCase):
             thread.join(2)
         self.directory.cleanup()
 
-    def request(self, method, path, payload=None, token=None, port=None):
+    def request(self, method, path, payload=None, port=None):
         connection = HTTPConnection('127.0.0.1', port or self.port, timeout=20)
         headers = {'Content-Type': 'application/json'}
-        if token:
-            headers['Authorization'] = f'Bearer {token}'
         connection.request(method, path, body=json.dumps(payload) if payload is not None else None, headers=headers)
         response = connection.getresponse()
         result = response.status, json.loads(response.read())
         connection.close()
         return result
 
-    def create(self, **kwargs):
-        status, run = self.request('POST', '/api/runs', {'scenario_id':'P01_intro'}, **kwargs)
+    def create(self):
+        status, run = self.request('POST', '/api/runs', {'scenario_id':'P01_intro'})
         self.assertEqual(status, 201, run)
         return run
 
@@ -119,29 +117,15 @@ class PersistentApiTests(unittest.TestCase):
         self.assertEqual([f.result()[0] for f in futures],[200,200])
         self.assertEqual(self.request('GET',path)[1]['observation']['step'],2)
 
-    def test_auth_isolation_roles_logout_and_password_reset(self):
-        self.database.set_user('alice','alice-password-123')
-        self.database.set_user('bob','bob-password-12345')
-        port = self.start_server(auth=True)
-        def login(name, password):
-            status, body = self.request('POST','/api/auth/login',{'username':name,'password':password},port=port)
-            self.assertEqual(status,200,body)
-            return body['token']
-        alice = login('alice','alice-password-123'); bob = login('bob','bob-password-12345')
-        self.assertEqual(self.request('GET','/api/runs',port=port)[0],401)
-        run = self.create(token=alice,port=port); path='/api/runs/'+run['run_id']
-        for suffix in ('','/result','/explain?step=0&satellite_id=S01'):
-            self.assertEqual(self.request('GET',path+suffix,token=bob,port=port)[0],404)
-        self.assertEqual(self.request('POST',path+'/advance',{'steps':1},token=bob,port=port)[0],404)
-        self.assertEqual(self.request('GET','/api/runs',token=bob,port=port)[1]['runs'],[])
-        self.database.set_user('alice','alice-new-password','viewer')
-        self.assertEqual(self.request('GET',path,token=alice,port=port)[0],401)
-        alice=login('alice','alice-new-password')
-        self.assertEqual(self.request('GET',path,token=alice,port=port)[0],200)
-        self.assertEqual(self.request('POST',path+'/advance',{'steps':1},token=alice,port=port)[0],403)
-        self.assertEqual(self.request('POST','/api/auth/logout',{},token=alice,port=port)[0],200)
-        self.assertEqual(self.request('GET',path,token=alice,port=port)[0],401)
-        self.assertEqual(self.request('POST','/api/auth/login',{'username':'bob','password':'wrong'},port=port)[0],401)
+    def test_runs_are_shared_without_login_endpoints(self):
+        run = self.create()
+        path = '/api/runs/' + run['run_id']
+        second_port = self.start_server()
+        self.assertEqual(self.request('GET', path, port=second_port)[0], 200)
+        self.assertEqual(self.request('POST', path + '/advance', {'steps': 1}, port=second_port)[0], 200)
+        self.assertEqual(self.request('GET', path, port=self.port)[1]['observation']['step'], 1)
+        self.assertEqual(self.request('GET', '/api/auth/session')[0], 404)
+        self.assertEqual(self.request('POST', '/api/auth/login', {})[0], 404)
 
     def test_failed_commit_does_not_send_success(self):
         # A failed write must roll back the snapshot and return an error, not an ACK.

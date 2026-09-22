@@ -3,8 +3,6 @@ from __future__ import annotations
 import argparse
 import copy
 from contextlib import nullcontext
-import getpass
-import ipaddress
 import json
 import math
 from collections import Counter
@@ -633,28 +631,8 @@ class OperatorHandler(BaseHTTPRequestHandler):
     def _safe_handle(self, method: str) -> None:
         try:
             path = urlsplit(self.path).path
-            database = self.server.auth_database
-            token = self.headers.get("Authorization", "").removeprefix("Bearer ")
-            owner, role = "local", "operator"
-            if path == "/api/auth/login" and method == "POST" and database:
-                payload = self._read_json()
-                self._send(200, database.login(payload.get("username"), payload.get("password")))
-                return
-            if database and path.startswith("/api/"):
-                owner, role = database.authenticate(token)
-            if path == "/api/auth/session" and method == "GET":
-                self._send(200, {"username": owner, "role": role, "authentication": bool(database)})
-                return
-            if path == "/api/auth/logout" and method == "POST":
-                if database:
-                    database.logout(token)
-                self._send(200, {"ok": True})
-                return
-            if role == "viewer" and method != "GET":
-                self._send(403, error_payload("Read-only account", code="forbidden"))
-                return
             store = self.service.store
-            transaction = store.transaction(owner, method != "GET") if hasattr(store, "transaction") else nullcontext()
+            transaction = store.transaction(method != "GET") if hasattr(store, "transaction") else nullcontext()
             self._buffer_response = True
             try:
                 with transaction:
@@ -662,8 +640,6 @@ class OperatorHandler(BaseHTTPRequestHandler):
             finally:
                 self._buffer_response = False
             self._send(*self._pending_response)
-        except PermissionError as exc:
-            self._send(401, error_payload(str(exc), code="unauthorized"))
         except BranchConflict as exc:
             self._send(409, error_payload(str(exc), code="branch_conflict"))
         except KeyError as exc:
@@ -687,11 +663,8 @@ class OperatorServer(ThreadingHTTPServer):
     allow_reuse_address = True
     daemon_threads = True
 
-    def __init__(self, address: tuple[str, int], service: OperatorService | None = None, auth_database=None) -> None:
-        self.auth_database = auth_database
+    def __init__(self, address: tuple[str, int], service: OperatorService | None = None) -> None:
         self.service = service or OperatorService()
-        if auth_database is not None and not hasattr(self.service.store, "transaction"):
-            raise ValueError("Authentication requires an owner-scoped persistent store")
         super().__init__(address, OperatorHandler)
 
 
@@ -700,27 +673,10 @@ def main() -> None:
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--database", default="results/operator.sqlite3")
-    parser.add_argument("--auth", action="store_true", help="Require operator accounts")
-    parser.add_argument("--set-user", help="Create/update account and exit; password is prompted")
-    parser.add_argument("--role", choices=("operator", "viewer"), default="operator")
     args = parser.parse_args()
     from web.persistence import Database, SQLiteRunStore
     database = Database(args.database)
-    if args.set_user:
-        password = getpass.getpass("Password (at least 12 characters): ")
-        if password != getpass.getpass("Repeat password: "):
-            parser.error("Passwords do not match")
-        database.set_user(args.set_user, password, args.role)
-        print(f"Account {args.set_user} saved")
-        return
-    try:
-        loopback = ipaddress.ip_address(args.host).is_loopback
-    except ValueError:
-        loopback = args.host == "localhost"
-    if not loopback and not args.auth:
-        parser.error("Non-loopback binding requires --auth")
-    server = OperatorServer((args.host, args.port), OperatorService(SQLiteRunStore(database)),
-                            auth_database=database if args.auth else None)
+    server = OperatorServer((args.host, args.port), OperatorService(SQLiteRunStore(database)))
     print(f"Planner operator listening on http://{args.host}:{args.port}")
     try:
         server.serve_forever()

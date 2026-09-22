@@ -20,7 +20,6 @@
     #timeline th:first-child { position: sticky; left: 0; background: var(--bg); z-index: 1; }
     #timeline td, #timeline th { padding: 3px; text-align: center; }
     #timeline { max-height: 500px; }
-    #loginPanel { margin-bottom: 18px; }
 
     :root {
       color-scheme: dark;
@@ -398,13 +397,7 @@
 
     <div class="layout">
       <aside class="sidebar">
-        <section class="panel panel-pad" id="loginPanel" hidden>
-          <h2>Вход оператора</h2>
-          <form id="loginForm"><div class="field"><label for="username">Имя</label><input id="username" autocomplete="username" required></div>
-          <div class="field"><label for="password">Пароль</label><input id="password" type="password" autocomplete="current-password" required></div>
-          <button class="button primary" type="submit">Войти</button></form>
-        </section>
-        <section class="panel panel-pad"><div class="hint" id="accountLabel">Локальная сессия</div><button class="button ghost" id="logoutBtn" hidden>Выйти</button>
+        <section class="panel panel-pad"><div class="hint">Сохранённые запуски</div>
           <div class="field"><label for="savedRuns">Сохранённые запуски</label><select id="savedRuns"><option value="">Выберите запуск</option></select></div>
           <div class="button-row"><button class="button" id="openRun">Открыть</button><button class="button ghost" id="refreshRuns">Обновить</button></div>
         </section>
@@ -469,8 +462,7 @@
 <script>
   const $ = id => document.getElementById(id);
   let scenarios = [], current = null, currentRunId = '', eventType = 'satellite_outage';
-  let customScenario = null, jobsPage = 0, authToken = sessionStorage.getItem('cosmo-token') || '';
-  let accountRole = 'operator';
+  let customScenario = null, jobsPage = 0;
   const themeColor = document.querySelector('meta[name="theme-color"]');
   function syncThemeUI() { const light = document.documentElement.dataset.theme === 'light'; $('themeToggle').setAttribute('aria-pressed', String(light)); $('themeToggle').setAttribute('aria-label', light ? 'Включить тёмную тему' : 'Включить светлую тему'); themeColor.content = light ? '#fffae3' : '#151411'; }
   function toggleTheme(event) { const next = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light'; const rect = event.currentTarget.getBoundingClientRect(); document.documentElement.style.setProperty('--theme-x', `${rect.left + rect.width / 2}px`); document.documentElement.style.setProperty('--theme-y', `${rect.top + rect.height / 2}px`); const apply = () => { document.documentElement.dataset.theme = next; localStorage.setItem('cosmo-theme', next); syncThemeUI(); }; if (document.startViewTransition && !matchMedia('(prefers-reduced-motion: reduce)').matches) document.startViewTransition(apply); else apply(); }
@@ -481,7 +473,7 @@
     if (options.method === 'POST' && current?.revision && url.startsWith(`/api/runs/${encodeURIComponent(currentRunId)}/`)) {
       options = {...options, body:JSON.stringify({...JSON.parse(options.body || '{}'), expected_revision:current.revision})};
     }
-    const response = await fetch(url, {...options, headers: {'Content-Type':'application/json', ...(authToken ? {Authorization: `Bearer ${authToken}`} : {}), ...(options.headers || {})}}); let data; try { data = await response.json(); } catch (_) { data = {}; } if (response.status === 401) { $('loginPanel').hidden = false; } if (!response.ok) throw new Error(data.message || 'Сервис вернул ошибку'); return data; };
+    const response = await fetch(url, {...options, headers: {'Content-Type':'application/json', ...(options.headers || {})}}); let data; try { data = await response.json(); } catch (_) { data = {}; } if (!response.ok) throw new Error(data.message || 'Сервис вернул ошибку'); return data; };
   function status(message, error = false) { $('status').textContent = message; $('status').className = 'status ' + (error ? 'error' : 'ok'); }
   function active() { if (!currentRunId) throw new Error('Сначала создайте запуск'); return encodeURIComponent(currentRunId); }
   function scenarioChanged() { const s = scenarios.find(item => item.id === $('scenario').value); if (s) { $('scenarioInfo').textContent = `${s.satellites} аппаратов · ${s.steps} шагов · ${s.jobs.toLocaleString('ru-RU')} заданий · ${Math.round(s.steps * 5 / 60)} ч`; $('scenarioCount').textContent = s.id; } }
@@ -489,7 +481,7 @@
   function settings() { const payload = {}; const sid = $('tuneSat').value; if (sid) { payload.satellite_id = sid; if ($('soc').value !== '') payload.initial_soc_pct = Number($('soc').value); if ($('solar').value !== '') payload.solar_multiplier = Number($('solar').value); } if ($('priorityJob').value) { payload.job_id = $('priorityJob').value; payload.priority = Number($('priorityValue').value); } if (sid && $('outageStart').value !== '' && $('outageEnd').value !== '') payload.outage = {satellite_ids: [sid], start_step: Number($('outageStart').value), end_step: Number($('outageEnd').value)}; return payload; }
   async function createRun() { try { const body = {...(customScenario ? {scenario:customScenario} : {scenario_id: $('scenario').value}), planner: $('planner').value, goal: $('goal').value}; const custom = settings(); if (Object.keys(custom).length) body.settings = custom; const data = await api('/api/runs', {method:'POST', body: JSON.stringify(body)}); currentRunId = data.run_id; render(data); status('Смена создана. Планировщик готов к первому шагу.'); $('runIdLabel').textContent = currentRunId; $('runMetaLabel').textContent = `${data.metadata.planner} · ${data.metadata.goal}`; localStorage.setItem('cosmo-last-config', JSON.stringify({scenario_id:$('scenario').value, planner:body.planner, goal:body.goal})); await refreshRuns(); } catch (e) { status(e.message, true); } }
   function populateSelectors(obs) { const ids = Object.keys(obs.state || {}); const old = $('tuneSat').value; $('tuneSat').innerHTML = `<option value="">Аппарат без изменения</option>` + ids.map(id => `<option value="${esc(id)}">${esc(id)}</option>`).join(''); $('tuneSat').value = ids.includes(old) ? old : (ids[0] || ''); $('explainSat').innerHTML = ids.map(id => `<option value="${esc(id)}">${esc(id)}</option>`).join(''); const jobs = Object.values(obs.jobs || {}); const oldJob = $('priorityJob').value; $('priorityJob').innerHTML = '<option value="">Приоритет без изменения</option>' + jobs.map(j => `<option value="${esc(j.id)}" data-priority="${j.priority}">${esc(j.id)} · P${j.priority}</option>`).join(''); $('priorityJob').value = jobs.some(j => j.id === oldJob) ? oldJob : ''; $('explainSat').value = ids[0] || ''; }
-  function render(data) { current = data; $('goal').value = data.observation.goal; $('runMetaLabel').textContent = `${data.metadata.planner} · ${data.metadata.goal}`; const obs = data.observation || {}; populateSelectors(obs); const total = data.available_actions?.scenario_steps || 0; const step = obs.step || 0; $('stepNow').textContent = step; $('stepTotal').textContent = `/ ${total}`; $('progressBar').style.width = total ? `${Math.round(step / total * 100)}%` : '0%'; $('stepHint').textContent = step >= total ? 'Смена завершена · доступен экспорт результата' : `Следующая граница: шаг ${step} · сообщения принимаются до выбора действий`; $('runIdLabel').textContent = data.run_id || currentRunId || 'Запуск не выбран'; const s = data.summary || {}; $('metrics').innerHTML = `<div class="metric cyan"><small>Выручка</small><strong>$${num(s.revenue_usd, 2)}</strong><span>USD · факт</span></div><div class="metric green"><small>Завершено</small><strong>${num(s.jobs_completed, 0)}</strong><span>из ${num(s.jobs_total, 0)} заданий</span></div><div class="metric pink"><small>Критические</small><strong>${num(s.critical_jobs_completed_on_time, 0)} / ${num(s.critical_jobs_due, 0)}</strong><span>приоритет 3</span></div><div class="metric amber"><small>Минимальный SOC</small><strong>${num(s.minimum_soc_pct, 1)}%</strong><span>нижняя точка заряда</span></div>`; renderSatellites(obs, data.telemetry || {}); renderJobs(obs.jobs || {}); renderTrace(data.telemetry || {}, step); renderHistory(data.history || []); renderCharts(data.telemetry || {}); renderInsight(s, data.telemetry || {}); renderTimeline(); applyRole(); }
+  function render(data) { current = data; $('goal').value = data.observation.goal; $('runMetaLabel').textContent = `${data.metadata.planner} · ${data.metadata.goal}`; const obs = data.observation || {}; populateSelectors(obs); const total = data.available_actions?.scenario_steps || 0; const step = obs.step || 0; $('stepNow').textContent = step; $('stepTotal').textContent = `/ ${total}`; $('progressBar').style.width = total ? `${Math.round(step / total * 100)}%` : '0%'; $('stepHint').textContent = step >= total ? 'Смена завершена · доступен экспорт результата' : `Следующая граница: шаг ${step} · сообщения принимаются до выбора действий`; $('runIdLabel').textContent = data.run_id || currentRunId || 'Запуск не выбран'; const s = data.summary || {}; $('metrics').innerHTML = `<div class="metric cyan"><small>Выручка</small><strong>$${num(s.revenue_usd, 2)}</strong><span>USD · факт</span></div><div class="metric green"><small>Завершено</small><strong>${num(s.jobs_completed, 0)}</strong><span>из ${num(s.jobs_total, 0)} заданий</span></div><div class="metric pink"><small>Критические</small><strong>${num(s.critical_jobs_completed_on_time, 0)} / ${num(s.critical_jobs_due, 0)}</strong><span>приоритет 3</span></div><div class="metric amber"><small>Минимальный SOC</small><strong>${num(s.minimum_soc_pct, 1)}%</strong><span>нижняя точка заряда</span></div>`; renderSatellites(obs, data.telemetry || {}); renderJobs(obs.jobs || {}); renderTrace(data.telemetry || {}, step); renderHistory(data.history || []); renderCharts(data.telemetry || {}); renderInsight(s, data.telemetry || {}); renderTimeline(); }
   function renderSatellites(obs, telemetry) { const entries = Object.entries(obs.state || {}); $('satCount').textContent = `${entries.length} аппаратов`; $('satellites').innerHTML = entries.length ? entries.map(([id, st]) => { const pct = Math.max(0, Math.min(100, st.energy_wh / (current.satellite_specs?.[id]?.capacity_wh || 1) * 100)); const history = telemetry[id] || []; const last = history[history.length - 1]; return `<article class="sat-card"><div class="sat-head"><span class="sat-id">${esc(id)}</span><i class="sat-state ${obs.available?.[id] ? '' : 'off'}"></i></div><div class="sat-meta"><span>Заряд</span><b>${num(pct)}%</b></div><div class="bar"><i style="width:${pct}%"></i></div><div class="sat-meta"><span>Температура</span><b>${num(st.temp_c)}°C</b></div><div class="bar temp"><i style="width:${Math.max(0, Math.min(100, st.temp_c / 45 * 100))}%"></i></div><div class="sat-action">${last ? `${esc(last.executed)} · ${esc(last.reason)}` : 'Ожидание первого решения'}</div></article>`; }).join('') : '<div class="empty">Нет данных.</div>'; }
   function renderJobs(jobMap) { const filter = ($('jobFilter').value || '').toLowerCase(); const allJobs = Object.values(jobMap).filter(j => j.id.toLowerCase().includes(filter)).sort((a,b) => (a.deadline_step - b.deadline_step) || a.id.localeCompare(b.id)); jobsPage = Math.max(0, Math.min(jobsPage, Math.ceil(allJobs.length / 160) - 1)); const jobs = allJobs.slice(jobsPage * 160, (jobsPage + 1) * 160); $('jobsPage').textContent = `${jobsPage + 1} / ${Math.max(1, Math.ceil(allJobs.length / 160))} · ${allJobs.length} заданий`; $('jobsPrev').disabled = jobsPage === 0; $('jobsNext').disabled = (jobsPage + 1) * 160 >= allJobs.length; $('jobs').innerHTML = jobs.length ? `<table><thead><tr><th>ID</th><th>Тип</th><th>Статус</th><th>Прогресс</th><th>Дедлайн</th><th>Приоритет</th><th>Стоимость</th></tr></thead><tbody>${jobs.map(j => { const done = j.completed_step != null, missed = !done && j.deadline_step <= (current.observation.step || 0); return `<tr><td>${esc(j.id)}</td><td>${esc(j.kind)}</td><td><span class="pill ${done ? 'good' : missed ? 'bad' : 'warn'}">${done ? 'завершено' : missed ? 'просрочено' : 'в работе'}</span></td><td>${j.work_steps - j.remaining_steps} / ${j.work_steps}</td><td>${j.deadline_step}</td><td>P${j.priority}</td><td>$${num(j.value_usd, 2)}</td></tr>`; }).join('')}</tbody></table>` : '<div class="empty">Задания не найдены.</div>'; }
   function renderTrace(telemetry, step) { const rows = Object.values(telemetry).flat().sort((a,b) => b.step - a.step).slice(0, 120); $('trace').innerHTML = rows.length ? `<table><thead><tr><th>Шаг</th><th>Аппарат</th><th>Операция</th><th>Причина</th><th>Заряд</th><th>Задание</th></tr></thead><tbody>${rows.map(r => `<tr><td>${r.step}</td><td>${esc(r.satellite_id || '')}</td><td><span class="pill ${r.executed === 'idle' ? '' : 'good'}">${esc(r.executed)}</span></td><td>${esc(r.reason)}</td><td>${num(r.energy_wh)} Wh</td><td>${esc(r.job_id || '—')}</td></tr>`).join('')}</tbody></table>` : '<div class="empty">Журнал появится после выполнения шага.</div>'; }
@@ -511,26 +503,10 @@
       $('savedRuns').value = selected;
     } catch (e) { status(e.message, true); }
   }
-  function applyRole() {
-    for (const id of ['createBtn','advanceOne','advanceSix','advanceUntil','sendEvent','compareBtn']) $(id).disabled = accountRole === 'viewer';
-  }
   async function initialize() {
-    try { const session = await api('/api/auth/session'); accountRole = session.role;
-      $('accountLabel').textContent = `${session.username} · ${session.role === 'viewer' ? 'только чтение' : 'оператор'}`;
-      $('loginPanel').hidden = true; $('logoutBtn').hidden = !session.authentication; applyRole();
-      await loadScenarios(); await refreshRuns();
+    try { await loadScenarios(); await refreshRuns();
     } catch (e) { status(e.message, true); }
   }
-  $('loginForm').addEventListener('submit', async event => {
-    event.preventDefault();
-    try { const data = await api('/api/auth/login', {method:'POST', body:JSON.stringify({username:$('username').value, password:$('password').value})});
-      authToken = data.token; sessionStorage.setItem('cosmo-token', authToken); $('password').value = ''; location.reload();
-    } catch(e) { status(e.message, true); }
-  });
-  $('logoutBtn').addEventListener('click', async () => {
-    try { await api('/api/auth/logout', {method:'POST', body:'{}'}); } catch(e) { status(e.message, true); }
-    sessionStorage.removeItem('cosmo-token'); location.reload();
-  });
   $('refreshRuns').addEventListener('click', refreshRuns);
   $('openRun').addEventListener('click', () => { if ($('savedRuns').value) openBranch($('savedRuns').value); });
   $('clearFile').addEventListener('click', () => { customScenario = null; $('scenarioFile').value = ''; $('fileInfo').textContent = 'Используется встроенный сценарий'; });

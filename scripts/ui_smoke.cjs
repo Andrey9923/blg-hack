@@ -12,20 +12,17 @@ from web.app import OperatorServer, OperatorService
 from web.persistence import Database, SQLiteRunStore
 with tempfile.TemporaryDirectory() as directory:
  db = Database(Path(directory)/'test.sqlite3')
- db.set_user('ui-user', 'ui-test-password-123')
- server = OperatorServer(('127.0.0.1',0), OperatorService(SQLiteRunStore(db)), auth_database=db)
+ server = OperatorServer(('127.0.0.1',0), OperatorService(SQLiteRunStore(db)))
  print(server.server_address[1], flush=True)
  server.serve_forever()
 `], {cwd:root, stdio:['ignore','pipe','inherit']});
   try {
     const port = await new Promise(resolve => readline.createInterface({input:server.stdout}).once('line',resolve));
     const base = `http://127.0.0.1:${port}`;
-    const login = await fetch(base+'/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:'ui-user',password:'ui-test-password-123'})}).then(r=>r.json());
     const html = await fetch(base).then(r=>r.text());
     const errors=[];
     const vc=new VirtualConsole(); vc.on('jsdomError',e=>errors.push(e.message));
     const dom = new JSDOM(html, {url:base, runScripts:'dangerously', pretendToBeVisual:true, virtualConsole:vc, beforeParse(w) {
-      w.sessionStorage.setItem('cosmo-token',login.token);
       w.fetch=(url,opts)=>fetch(new URL(url,base),opts);
       w.matchMedia=()=>({matches:false});
       w.HTMLElement.prototype.scrollIntoView=()=>{};
@@ -66,7 +63,7 @@ with tempfile.TemporaryDirectory() as directory:
     assert.equal(d.getElementById('timelineStart').value,'48');
     assert.equal(d.querySelectorAll('#timeline tbody tr').length,48);
     assert.deepEqual(errors,[]);
-    console.log('DOM integration passed: authenticated create, advance, timeline/explain, satellite chart, compare/adopt, reopen, JSON upload, jobs pagination and timeline paging.');
+    console.log('DOM integration passed: create, advance, timeline/explain, satellite chart, compare/adopt, reopen, JSON upload, jobs pagination and timeline paging.');
     dom.window.close();
   } finally { server.kill('SIGTERM'); }
 })().catch(e=>{console.error(e);process.exitCode=1;});
