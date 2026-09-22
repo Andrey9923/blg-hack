@@ -6,7 +6,7 @@ After=network.target
 Type=simple
 User=pichotiner
 WorkingDirectory=/home/pichotiner/2209
-ExecStart=/usr/bin/python3 -m web.app --host 127.0.0.1 --port 8001
+ExecStart=/usr/bin/python3 -m web.app --host 127.0.0.1 --port 8001 --database /home/pichotiner/2209/results/operator.sqlite3 --auth
 Restart=always
 RestartSec=5
 Environment=PYTHONUNBUFFERED=1
