@@ -1,0 +1,16 @@
+[Unit]
+Description=Satellite Operations Planner Web UI
+After=network.target
+
+[Service]
+Type=simple
+User=pichotiner
+WorkingDirectory=/home/pichotiner/2209
+ExecStart=/usr/bin/python3 -m web.app --host 127.0.0.1 --port 8001
+Restart=always
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+
+[Install]
+WantedBy=multi-user.target
