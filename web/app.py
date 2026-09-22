@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import argparse
 import copy
+from contextlib import nullcontext
+import getpass
+import ipaddress
 import json
 import math
 from collections import Counter
@@ -49,6 +52,11 @@ class RunStore:
         self._runs: dict[str, PlannerRuntime] = {}
         self._locks: dict[str, threading.RLock] = {}
         self._lock = threading.RLock()
+
+    def list_runs(self):
+        with self._lock:
+            return [{"run_id": key, "goal": run.goal, "step": run.current_step}
+                    for key, run in self._runs.items()]
 
     @staticmethod
     def _load_scenarios() -> dict[str, dict]:
@@ -232,6 +240,7 @@ def run_view(run: PlannerRuntime) -> dict[str, Any]:
         })
     return {
         "run_id": run.run_metadata.get("run_id"),
+        "revision": digest(run.result()),
         "observation": run.observation(),
         "summary": run.summary(),
         "metadata": copy.deepcopy(run.run_metadata),
@@ -425,6 +434,7 @@ class OperatorService:
             if not branch_id:
                 branch_id = "branch-" + uuid.uuid4().hex[:10]
             child = parent.fork(branch_id, planner=payload.get("planner"), goal=payload.get("goal"))
+            child.run_metadata["source_revision"] = digest(parent.result())
             self.store.add_fork(run_id, child)
             return run_view(child)
 
@@ -447,6 +457,8 @@ class OperatorService:
             base = f"comparison-{uuid.uuid4().hex[:8]}"
             first = parent.fork(f"{base}-a", goal=first_goal)
             second = parent.fork(f"{base}-b", goal=second_goal)
+            for branch in (first, second):
+                branch.run_metadata["source_revision"] = digest(parent.result())
             self.store.add_forks([first, second])
         first_run, first_lock = self.store.get(first.run_metadata["run_id"])
         second_run, second_lock = self.store.get(second.run_metadata["run_id"])
@@ -467,6 +479,32 @@ class OperatorService:
             "interpretation": "Сравнение выполнено на одном состоянии и одном полученном префиксе событий.",
         }
 
+    def adopt(self, run_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        branch_id = payload.get("branch_id")
+        if not isinstance(branch_id, str) or branch_id == run_id:
+            raise ValueError("branch_id must identify a child run")
+        parent, parent_lock = self.store.get(run_id)
+        child, child_lock = self.store.get(branch_id)
+        with parent_lock, child_lock:
+            if child.run_metadata.get("parent_run_id") != run_id:
+                raise ValueError("Selected run is not a direct child")
+            if child.run_metadata.get("source_revision") != digest(parent.result()):
+                raise BranchConflict("Parent changed since the fork; create a new comparison")
+            replacement = copy.deepcopy(child)
+            for key in ("parent_run_id", "parent_branch_point", "parent_branch_point_step",
+                        "parent_branch_point_digest", "branch_id", "source_revision"):
+                replacement.run_metadata.pop(key, None)
+                if key in parent.run_metadata:
+                    replacement.run_metadata[key] = copy.deepcopy(parent.run_metadata[key])
+            replacement.run_metadata["run_id"] = run_id
+            replacement.run_metadata["selected_branch_id"] = branch_id
+            replacement.history.append({"type": "branch_selected", "step": replacement.current_step,
+                                        "branch_id": branch_id})
+            # Preserve object identity for requests already waiting on this lock.
+            parent.__dict__.clear()
+            parent.__dict__.update(replacement.__dict__)
+            return run_view(parent)
+
     def explain(self, run_id: str, query: dict[str, list[str]]) -> dict[str, Any]:
         run, lock = self.store.get(run_id)
         try:
@@ -478,6 +516,10 @@ class OperatorService:
             return explain_trace(run, step, satellite_id)
 
 
+class BranchConflict(ValueError):
+    pass
+
+
 class OperatorHandler(BaseHTTPRequestHandler):
     server_version = "PlannerOperator/1.0"
 
@@ -486,6 +528,9 @@ class OperatorHandler(BaseHTTPRequestHandler):
         return self.server.service  # type: ignore[attr-defined]
 
     def _send(self, status: int, payload: Any, content_type: str = "application/json; charset=utf-8") -> None:
+        if getattr(self, "_buffer_response", False):
+            self._pending_response = (status, payload, content_type)
+            return
         body = payload if isinstance(payload, bytes) else json_bytes(payload)
         self.send_response(status)
         self.send_header("Content-Type", content_type)
@@ -495,6 +540,8 @@ class OperatorHandler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def _read_json(self) -> dict[str, Any]:
+        if self.headers.get_content_type() != "application/json":
+            raise ValueError("Content-Type must be application/json")
         raw_length = self.headers.get("Content-Length")
         try:
             length = int(raw_length or "0")
@@ -527,6 +574,9 @@ class OperatorHandler(BaseHTTPRequestHandler):
         if method == "POST" and path == "/api/scenarios/prepare":
             self._send(HTTPStatus.OK, {"scenario": self.service.store.prepare_scenario(self._read_json())})
             return
+        if path == "/api/runs" and method == "GET":
+            self._send(HTTPStatus.OK, {"runs": self.service.store.list_runs()})
+            return
         if path == "/api/runs" and method == "POST":
             run = self.service.store.create(self._read_json())
             self._send(HTTPStatus.CREATED, run_view(run))
@@ -542,6 +592,7 @@ class OperatorHandler(BaseHTTPRequestHandler):
             "/goal": "goal",
             "/fork": "fork",
             "/compare": "compare",
+            "/adopt": "adopt",
             "/result": "result",
             "/explain": "explain",
         }
@@ -566,22 +617,61 @@ class OperatorHandler(BaseHTTPRequestHandler):
         if operation == "explain" and method == "GET":
             self._send(HTTPStatus.OK, self.service.explain(run_id, parse_qs(parsed.query)))
             return
-        if method == "POST" and operation in ("advance", "event", "goal", "fork", "compare"):
+        if method == "POST" and operation in ("advance", "event", "goal", "fork", "compare", "adopt"):
             payload = self._read_json()
-            result = getattr(self.service, operation)(run_id, payload)
+            run, lock = self.service.store.get(run_id)
+            with lock:
+                revision = payload.pop("expected_revision", None)
+                if revision is not None and revision != digest(run.result()):
+                    self._send(409, error_payload("Run changed; reopen it before editing", code="revision_conflict"))
+                    return
+                result = getattr(self.service, operation)(run_id, payload)
             self._send(HTTPStatus.CREATED if operation == "fork" else HTTPStatus.OK, result)
             return
         self._send(HTTPStatus.NOT_FOUND, error_payload("endpoint not found", code="not_found"))
 
     def _safe_handle(self, method: str) -> None:
         try:
-            self._handle(method)
+            path = urlsplit(self.path).path
+            database = self.server.auth_database
+            token = self.headers.get("Authorization", "").removeprefix("Bearer ")
+            owner, role = "local", "operator"
+            if path == "/api/auth/login" and method == "POST" and database:
+                payload = self._read_json()
+                self._send(200, database.login(payload.get("username"), payload.get("password")))
+                return
+            if database and path.startswith("/api/"):
+                owner, role = database.authenticate(token)
+            if path == "/api/auth/session" and method == "GET":
+                self._send(200, {"username": owner, "role": role, "authentication": bool(database)})
+                return
+            if path == "/api/auth/logout" and method == "POST":
+                if database:
+                    database.logout(token)
+                self._send(200, {"ok": True})
+                return
+            if role == "viewer" and method != "GET":
+                self._send(403, error_payload("Read-only account", code="forbidden"))
+                return
+            store = self.service.store
+            transaction = store.transaction(owner, method != "GET") if hasattr(store, "transaction") else nullcontext()
+            self._buffer_response = True
+            try:
+                with transaction:
+                    self._handle(method)
+            finally:
+                self._buffer_response = False
+            self._send(*self._pending_response)
+        except PermissionError as exc:
+            self._send(401, error_payload(str(exc), code="unauthorized"))
+        except BranchConflict as exc:
+            self._send(409, error_payload(str(exc), code="branch_conflict"))
         except KeyError as exc:
             self._send(HTTPStatus.NOT_FOUND, error_payload(str(exc).strip("'"), code="not_found"))
         except (ValueError, TypeError, KeyError) as exc:
             self._send(HTTPStatus.BAD_REQUEST, error_payload(str(exc)))
         except Exception as exc:  # Keep a malformed operation from taking down the server.
-            self._send(HTTPStatus.INTERNAL_SERVER_ERROR, error_payload(f"server error: {exc}", code="server_error"))
+            self._send(HTTPStatus.INTERNAL_SERVER_ERROR, error_payload("Internal server error", code="server_error"))
 
     def do_GET(self) -> None:  # noqa: N802
         self._safe_handle("GET")
@@ -597,8 +687,11 @@ class OperatorServer(ThreadingHTTPServer):
     allow_reuse_address = True
     daemon_threads = True
 
-    def __init__(self, address: tuple[str, int], service: OperatorService | None = None) -> None:
+    def __init__(self, address: tuple[str, int], service: OperatorService | None = None, auth_database=None) -> None:
+        self.auth_database = auth_database
         self.service = service or OperatorService()
+        if auth_database is not None and not hasattr(self.service.store, "transaction"):
+            raise ValueError("Authentication requires an owner-scoped persistent store")
         super().__init__(address, OperatorHandler)
 
 
@@ -606,8 +699,28 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="PlannerRuntime operator web service")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)
+    parser.add_argument("--database", default="results/operator.sqlite3")
+    parser.add_argument("--auth", action="store_true", help="Require operator accounts")
+    parser.add_argument("--set-user", help="Create/update account and exit; password is prompted")
+    parser.add_argument("--role", choices=("operator", "viewer"), default="operator")
     args = parser.parse_args()
-    server = OperatorServer((args.host, args.port))
+    from web.persistence import Database, SQLiteRunStore
+    database = Database(args.database)
+    if args.set_user:
+        password = getpass.getpass("Password (at least 12 characters): ")
+        if password != getpass.getpass("Repeat password: "):
+            parser.error("Passwords do not match")
+        database.set_user(args.set_user, password, args.role)
+        print(f"Account {args.set_user} saved")
+        return
+    try:
+        loopback = ipaddress.ip_address(args.host).is_loopback
+    except ValueError:
+        loopback = args.host == "localhost"
+    if not loopback and not args.auth:
+        parser.error("Non-loopback binding requires --auth")
+    server = OperatorServer((args.host, args.port), OperatorService(SQLiteRunStore(database)),
+                            auth_database=database if args.auth else None)
     print(f"Planner operator listening on http://{args.host}:{args.port}")
     try:
         server.serve_forever()
