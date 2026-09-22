@@ -1,0 +1,8 @@
+[Unit]
+Description=Consistent planner backup and completed-run retention
+
+[Service]
+Type=oneshot
+User=pichotiner
+WorkingDirectory=/home/pichotiner/2209
+ExecStart=/usr/bin/python3 -m web.maintenance --database results/operator.sqlite3 --directory backups --keep-backups 14 --keep-runs 100

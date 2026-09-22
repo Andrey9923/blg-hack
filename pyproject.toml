@@ -8,3 +8,6 @@ dependencies = []
 
 [tool.setuptools]
 packages = ["model", "planner", "web"]
+
+[tool.setuptools.package-data]
+web = ["index.html", "assets/*.js", "assets/fonts/*"]

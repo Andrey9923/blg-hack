@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const readline = require('node:readline');
 const root = require('node:path').resolve(__dirname, '..');
 (async () => {
-  const server = spawn('python3', ['-u', '-c', `
+  const server = spawn(process.env.PYTHON || (process.platform === 'win32' ? 'python' : 'python3'), ['-u', '-c', `
 import tempfile
 from pathlib import Path
 from web.app import OperatorServer, OperatorService
@@ -24,7 +24,7 @@ with tempfile.TemporaryDirectory() as directory:
     const html = await fetch(base).then(r=>r.text());
     const errors=[];
     const vc=new VirtualConsole(); vc.on('jsdomError',e=>errors.push(e.message));
-    const dom = new JSDOM(html, {url:base, runScripts:'dangerously', pretendToBeVisual:true, virtualConsole:vc, beforeParse(w) {
+    const dom = new JSDOM(html, {url:base, runScripts:'dangerously', resources:'usable', pretendToBeVisual:true, virtualConsole:vc, beforeParse(w) {
       w.sessionStorage.setItem('cosmo-token',login.token);
       w.fetch=(url,opts)=>fetch(new URL(url,base),opts);
       w.matchMedia=()=>({matches:false});
@@ -39,7 +39,7 @@ with tempfile.TemporaryDirectory() as directory:
     d.getElementById('advanceOne').click();
     await waitFor(()=>d.getElementById('stepNow').textContent==='1','advance');
     assert.equal(d.querySelectorAll('#timeline tbody tr').length,16);
-    assert.equal(d.querySelectorAll('.timeline-cell').length,16);
+    assert.equal(d.querySelectorAll('.timeline-cell[data-step]').length,16);
     d.querySelector('.timeline-cell').click();
     await waitFor(()=>d.querySelector('#explanation .pill'),'timeline explain');
     d.getElementById('chartSat').value='S01'; d.getElementById('chartSat').dispatchEvent(new w.Event('change'));

@@ -10,6 +10,7 @@ import math
 from collections import Counter
 import re
 import threading
+import time
 import uuid
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -42,6 +43,12 @@ def json_bytes(value: Any) -> bytes:
 
 def error_payload(message: str, *, code: str = "bad_request") -> dict[str, str]:
     return {"error": code, "message": message}
+
+
+class ApiError(ValueError):
+    def __init__(self, message, code="invalid_request", status=400):
+        super().__init__(message)
+        self.code, self.status = code, status
 
 
 class RunStore:
@@ -404,6 +411,25 @@ class OperatorService:
                 run.run_until(payload["until_step"])
             return run_view(run)
 
+    def schedule(self, run_id, payload):
+        run, lock = self.store.get(run_id)
+        with lock:
+            run.set_schedule(payload.get('entries'))
+            return run_view(run)
+
+    def preview(self, run_id, payload):
+        run, lock = self.store.get(run_id)
+        with lock:
+            target = payload.get('until_step', min(run.current_step + 48, run.env.s['time']['steps']))
+            if type(target) is not int or not run.current_step <= target <= min(run.current_step + 96, run.env.s['time']['steps']):
+                raise ValueError('Preview must end within the next 96 steps')
+            forecast = copy.deepcopy(run)
+            start = run.current_step
+            forecast.run_until(target)
+            view = run_view(forecast)
+            return {'source_revision': digest(run.result()), 'from_step': start,
+                    'until_step': target, 'telemetry': view['telemetry'], 'summary': view['summary']}
+
     def event(self, run_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         run, lock = self.store.get(run_id)
         event = payload.get("event") if isinstance(payload, dict) and "event" in payload else payload
@@ -536,31 +562,42 @@ class OperatorHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
+        if status == 429:
+            self.send_header("Retry-After", "60")
+        origin = self.headers.get("Origin")
+        allowed = getattr(self.server, "cors_origin", "")
+        if origin and allowed and (allowed == "*" or origin == allowed):
+            self.send_header("Access-Control-Allow-Origin", origin)
+            self.send_header("Vary", "Origin")
+            self.send_header("Access-Control-Allow-Headers", "Authorization, Content-Type")
+            self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.end_headers()
         self.wfile.write(body)
 
     def _read_json(self) -> dict[str, Any]:
         if self.headers.get_content_type() != "application/json":
-            raise ValueError("Content-Type must be application/json")
+            raise ApiError("Content-Type must be application/json", "unsupported_media_type", 415)
         raw_length = self.headers.get("Content-Length")
         try:
             length = int(raw_length or "0")
         except ValueError:
-            raise ValueError("Content-Length must be an integer")
+            raise ApiError("Content-Length must be an integer", "invalid_content_length")
         if length < 0 or length > MAX_BODY_BYTES:
-            raise ValueError("request JSON exceeds the 8 MiB size limit")
+            raise ApiError("request JSON exceeds the 8 MiB size limit", "payload_too_large", 413)
         raw = self.rfile.read(length)
         try:
             value = json.loads(raw.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-            raise ValueError(f"invalid JSON: {exc}")
+            raise ApiError(f"invalid JSON: {exc}", "invalid_json")
         if not isinstance(value, dict):
-            raise ValueError("request JSON must be an object")
+            raise ApiError("request JSON must be an object", "invalid_payload")
         return value
 
     def _handle(self, method: str) -> None:
         parsed = urlsplit(self.path)
         path = parsed.path
+        if path.startswith("/api/v1/"):
+            path = "/api/" + path[len("/api/v1/"):]
         if method == "GET" and path == "/health":
             self._send(HTTPStatus.OK, {"status": "ok", "service": "planner-runtime"})
             return
@@ -568,17 +605,35 @@ class OperatorHandler(BaseHTTPRequestHandler):
             html_path = Path(__file__).with_name("index.html")
             self._send(HTTPStatus.OK, html_path.read_bytes(), "text/html; charset=utf-8")
             return
+        if method == "GET" and path.startswith("/assets/fonts/"):
+            name = path.removeprefix("/assets/fonts/")
+            if name not in ("montserrat-latin.woff2", "montserrat-cyrillic.woff2", "dm-mono-latin.woff2"):
+                raise KeyError("font not found")
+            self._send(200, (Path(__file__).parent / "assets" / "fonts" / name).read_bytes(), "font/woff2")
+            return
+        if method == "GET" and path == "/assets/operator-tools.js":
+            self._send(200, (Path(__file__).parent / "assets" / "operator-tools.js").read_bytes(), "text/javascript; charset=utf-8")
+            return
         if method == "GET" and path == "/api/scenarios":
             self._send(HTTPStatus.OK, {"scenarios": self.service.store.scenario_list()})
             return
         if method == "POST" and path == "/api/scenarios/prepare":
-            self._send(HTTPStatus.OK, {"scenario": self.service.store.prepare_scenario(self._read_json())})
+            payload = self._read_json()
+            try:
+                scenario = self.service.store.prepare_scenario(payload)
+            except (ValueError, TypeError, KeyError) as exc:
+                raise ApiError(str(exc), "invalid_scenario") from exc
+            self._send(HTTPStatus.OK, {"scenario": scenario})
             return
         if path == "/api/runs" and method == "GET":
             self._send(HTTPStatus.OK, {"runs": self.service.store.list_runs()})
             return
         if path == "/api/runs" and method == "POST":
-            run = self.service.store.create(self._read_json())
+            payload = self._read_json()
+            try:
+                run = self.service.store.create(payload)
+            except (ValueError, TypeError, KeyError) as exc:
+                raise ApiError(str(exc), "invalid_run_configuration") from exc
             self._send(HTTPStatus.CREATED, run_view(run))
             return
         prefix = "/api/runs/"
@@ -593,6 +648,8 @@ class OperatorHandler(BaseHTTPRequestHandler):
             "/fork": "fork",
             "/compare": "compare",
             "/adopt": "adopt",
+            "/schedule": "schedule",
+            "/preview": "preview",
             "/result": "result",
             "/explain": "explain",
         }
@@ -615,9 +672,13 @@ class OperatorHandler(BaseHTTPRequestHandler):
                 self._send(HTTPStatus.OK, run.result())
             return
         if operation == "explain" and method == "GET":
-            self._send(HTTPStatus.OK, self.service.explain(run_id, parse_qs(parsed.query)))
+            try:
+                explanation = self.service.explain(run_id, parse_qs(parsed.query))
+            except (ValueError, TypeError) as exc:
+                raise ApiError(str(exc), "invalid_explain") from exc
+            self._send(HTTPStatus.OK, explanation)
             return
-        if method == "POST" and operation in ("advance", "event", "goal", "fork", "compare", "adopt"):
+        if method == "POST" and operation in ("advance", "event", "goal", "fork", "compare", "adopt", "schedule", "preview"):
             payload = self._read_json()
             run, lock = self.service.store.get(run_id)
             with lock:
@@ -625,7 +686,12 @@ class OperatorHandler(BaseHTTPRequestHandler):
                 if revision is not None and revision != digest(run.result()):
                     self._send(409, error_payload("Run changed; reopen it before editing", code="revision_conflict"))
                     return
-                result = getattr(self.service, operation)(run_id, payload)
+                try:
+                    result = getattr(self.service, operation)(run_id, payload)
+                except BranchConflict:
+                    raise
+                except (ValueError, TypeError) as exc:
+                    raise ApiError(str(exc), f"invalid_{operation}") from exc
             self._send(HTTPStatus.CREATED if operation == "fork" else HTTPStatus.OK, result)
             return
         self._send(HTTPStatus.NOT_FOUND, error_payload("endpoint not found", code="not_found"))
@@ -633,6 +699,11 @@ class OperatorHandler(BaseHTTPRequestHandler):
     def _safe_handle(self, method: str) -> None:
         try:
             path = urlsplit(self.path).path
+            if path.startswith("/api/v1/"):
+                path = "/api/" + path[len("/api/v1/"):]
+            if path.startswith('/api/') and not self.server.allow_request(self.client_address[0]):
+                self._send(429, error_payload('Request limit exceeded; retry in one minute', code='rate_limited'))
+                return
             database = self.server.auth_database
             token = self.headers.get("Authorization", "").removeprefix("Bearer ")
             owner, role = "local", "operator"
@@ -662,6 +733,8 @@ class OperatorHandler(BaseHTTPRequestHandler):
             finally:
                 self._buffer_response = False
             self._send(*self._pending_response)
+        except ApiError as exc:
+            self._send(exc.status, error_payload(str(exc), code=exc.code))
         except PermissionError as exc:
             self._send(401, error_payload(str(exc), code="unauthorized"))
         except BranchConflict as exc:
@@ -669,7 +742,7 @@ class OperatorHandler(BaseHTTPRequestHandler):
         except KeyError as exc:
             self._send(HTTPStatus.NOT_FOUND, error_payload(str(exc).strip("'"), code="not_found"))
         except (ValueError, TypeError, KeyError) as exc:
-            self._send(HTTPStatus.BAD_REQUEST, error_payload(str(exc)))
+            self._send(HTTPStatus.BAD_REQUEST, error_payload(str(exc), code="invalid_request"))
         except Exception as exc:  # Keep a malformed operation from taking down the server.
             self._send(HTTPStatus.INTERNAL_SERVER_ERROR, error_payload("Internal server error", code="server_error"))
 
@@ -679,6 +752,13 @@ class OperatorHandler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:  # noqa: N802
         self._safe_handle("POST")
 
+    def do_OPTIONS(self) -> None:  # noqa: N802
+        origin = self.headers.get("Origin")
+        if origin and self.server.cors_origin not in (origin, "*"):
+            self._send(403, error_payload("Origin is not allowed", code="origin_not_allowed"))
+            return
+        self._send(HTTPStatus.NO_CONTENT, b"")
+
     def log_message(self, format: str, *args: Any) -> None:
         return
 
@@ -687,12 +767,35 @@ class OperatorServer(ThreadingHTTPServer):
     allow_reuse_address = True
     daemon_threads = True
 
-    def __init__(self, address: tuple[str, int], service: OperatorService | None = None, auth_database=None) -> None:
+    def __init__(self, address: tuple[str, int], service: OperatorService | None = None, auth_database=None, cors_origin: str = "", rate_limit: int = 0) -> None:
         self.auth_database = auth_database
+        self.cors_origin = cors_origin
+        if rate_limit < 0:
+            raise ValueError('rate_limit must be nonnegative')
+        self.rate_limit = rate_limit
+        self._request_counts = {}
+        self._rate_lock = threading.Lock()
         self.service = service or OperatorService()
         if auth_database is not None and not hasattr(self.service.store, "transaction"):
             raise ValueError("Authentication requires an owner-scoped persistent store")
         super().__init__(address, OperatorHandler)
+
+    def allow_request(self, address):
+        if not self.rate_limit:
+            return True
+        now = time.monotonic()
+        with self._rate_lock:
+            start, count = self._request_counts.get(address, (now, 0))
+            if now - start >= 60:
+                start, count = now, 0
+            if count >= self.rate_limit:
+                return False
+            if address not in self._request_counts and len(self._request_counts) >= 10000:
+                self._request_counts = {key: value for key, value in self._request_counts.items() if now - value[0] < 60}
+                if len(self._request_counts) >= 10000:
+                    return False
+            self._request_counts[address] = (start, count + 1)
+            return True
 
 
 def main() -> None:
@@ -703,9 +806,26 @@ def main() -> None:
     parser.add_argument("--auth", action="store_true", help="Require operator accounts")
     parser.add_argument("--set-user", help="Create/update account and exit; password is prompted")
     parser.add_argument("--role", choices=("operator", "viewer"), default="operator")
+    parser.add_argument("--cors-origin", default="", help="Allowed browser origin, or * for development")
+    parser.add_argument("--rate-limit", type=int, default=120, help="API requests per minute per peer IP; 0 disables")
+    parser.add_argument("--backup", help="Create a consistent SQLite backup and exit")
+    parser.add_argument("--prune-runs", type=int, help="Back up, then keep newest N completed runs per owner")
     args = parser.parse_args()
+    if args.rate_limit < 0:
+        parser.error('--rate-limit must be nonnegative')
+    if args.cors_origin and args.cors_origin != '*':
+        origin = urlsplit(args.cors_origin)
+        if origin.scheme not in ('http', 'https') or not origin.netloc or origin.path or origin.query or origin.fragment:
+            parser.error('--cors-origin must be an exact http(s) origin without a trailing slash')
     from web.persistence import Database, SQLiteRunStore
     database = Database(args.database)
+    if args.backup:
+        print(f"Backup written to {database.backup(args.backup)}")
+        return
+    if args.prune_runs is not None:
+        from web.maintenance import maintain
+        print(maintain(database, Path(args.database).parent / "backups", keep_runs=args.prune_runs))
+        return
     if args.set_user:
         password = getpass.getpass("Password (at least 12 characters): ")
         if password != getpass.getpass("Repeat password: "):
@@ -720,7 +840,8 @@ def main() -> None:
     if not loopback and not args.auth:
         parser.error("Non-loopback binding requires --auth")
     server = OperatorServer((args.host, args.port), OperatorService(SQLiteRunStore(database)),
-                            auth_database=database if args.auth else None)
+                            auth_database=database if args.auth else None, cors_origin=args.cors_origin,
+                            rate_limit=args.rate_limit)
     print(f"Planner operator listening on http://{args.host}:{args.port}")
     try:
         server.serve_forever()

@@ -96,6 +96,8 @@ class PlannerRuntime:
             raise ValueError('Simulation is finished')
         step = self.current_step
         actions = self.planner.plan(self.session)
+        overrides = self.run_metadata.get('scheduled_actions', {}).get(str(step), {})
+        actions.update(copy.deepcopy(overrides))
         rows = self.session.advance(actions)
         self.history.append({
             'type': 'step',
@@ -104,6 +106,37 @@ class PlannerRuntime:
             'trace': copy.deepcopy(rows),
         })
         return rows
+
+    def set_schedule(self, entries: list[dict]) -> None:
+        """Replace future manual overrides atomically; executed history is immutable."""
+        if not isinstance(entries, list) or len(entries) > 10000:
+            raise ValueError('entries must be a list of at most 10000 operations')
+        schedule = {}
+        for entry in entries:
+            if not isinstance(entry, dict) or set(entry) != {'step', 'satellite_id', 'action'}:
+                raise ValueError('Each entry requires step, satellite_id and action')
+            step, sid, action = entry['step'], entry['satellite_id'], entry['action']
+            if type(step) is not int or not self.current_step <= step < self.env.s['time']['steps']:
+                raise ValueError('Only unfinished steps within the shift may be edited')
+            if not isinstance(sid, str) or sid not in self.env.sats:
+                raise ValueError('Unknown satellite')
+            if not isinstance(action, dict) or action.get('action') not in ('idle', 'calibrate', 'job'):
+                raise ValueError('Unknown action')
+            expected = {'action', 'job_id'} if action['action'] == 'job' else {'action'}
+            if set(action) != expected:
+                raise ValueError('Invalid action fields')
+            if action['action'] == 'job':
+                job = self.env.jobs.get(action['job_id']) if isinstance(action['job_id'], str) else None
+                if job is None or sid not in job['eligible_satellites']:
+                    raise ValueError('Job is unknown or not eligible for this satellite')
+                if not job['release_step'] <= step < job['deadline_step']:
+                    raise ValueError('Job is outside its release/deadline window')
+            if sid in schedule.setdefault(str(step), {}):
+                raise ValueError('Duplicate satellite/step slot')
+            schedule[str(step)][sid] = copy.deepcopy(action)
+        self.run_metadata['scheduled_actions'] = schedule
+        self.history.append({'type': 'schedule_changed', 'step': self.current_step,
+                             'operation_count': len(entries)})
 
     execute_step = step
 

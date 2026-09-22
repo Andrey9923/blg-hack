@@ -34,3 +34,50 @@ curl https://hack.amdm.life/health
 ```
 
 If the enabled-site symlink already exists, omit the `ln -s` command.
+
+## Daily consistent backups
+
+Adjust user and checkout paths in the supplied units before installing:
+
+```bash
+sudo install -m 0644 deploy/hack-planner-backup.service /etc/systemd/system/
+sudo install -m 0644 deploy/hack-planner-backup.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now hack-planner-backup.timer
+sudo systemctl start hack-planner-backup.service
+```
+
+The task keeps 14 backup files and the latest 100 completed runs per owner,
+preserving unfinished runs and ancestors of retained branches. Every cleanup is
+preceded by a successful SQLite backup. This timer does not need to stop the app.
+
+On Windows, use Task Scheduler (daily trigger): program = full path to `python.exe`,
+Start in = checkout path, arguments:
+
+```text
+-m web.maintenance --database "C:\path\blg-hack\results\operator.sqlite3" --directory "C:\path\blg-hack\backups" --keep-backups 14 --keep-runs 100
+```
+
+Run the task once manually and verify its exit status and backup before relying
+on the daily schedule. Timer installation on a remote host is an operator action.
+
+## Request limits
+
+The application CLI defaults to 120 API requests/minute per peer IP and returns
+429 with Retry-After. Behind Nginx, configure per-client limits in the proxy and
+set a suitable shared upstream `--rate-limit` (or 0 when the proxy enforces it).
+For example, inside the Nginx `http` context:
+
+```nginx
+limit_req_zone $binary_remote_addr zone=planner_api:10m rate=2r/s;
+```
+
+Inside the site's `location /`:
+
+```nginx
+limit_req zone=planner_api burst=30 nodelay;
+limit_req_status 429;
+```
+
+`--cors-origin https://frontend.example` enables one external frontend origin.
+The UI shipped with the application is same-origin and needs no CORS setting.

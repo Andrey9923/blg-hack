@@ -98,6 +98,53 @@ class Database:
         with self.session() as db:
             db.execute('DELETE FROM sessions WHERE token = ?', (self.token_hash(token),))
 
+    def backup(self, destination):
+        """Create a consistent SQLite backup without stopping the service."""
+        target = Path(destination).resolve()
+        if str(target) == self.path:
+            raise ValueError('Backup destination must differ from the live database')
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if target.exists():
+            raise ValueError('Backup already exists; choose a new filename')
+        target.touch(mode=0o600, exist_ok=False)
+        copy_db = sqlite3.connect(target)
+        try:
+            with self.session() as source:
+                source.backup(copy_db)
+        finally:
+            copy_db.close()
+        return str(target)
+
+    def prune_runs(self, keep=100):
+        """Keep newest N completed runs per owner and all unfinished runs.
+
+        Preserve ancestry of retained branches. Caller must create a backup first.
+        """
+        if type(keep) is not int or keep < 1:
+            raise ValueError('keep must be a positive integer')
+        with self.session() as db:
+            db.execute('BEGIN IMMEDIATE')
+            rows = db.execute('SELECT id, owner, payload FROM runs ORDER BY updated DESC').fetchall()
+            retained, counts, parents = set(), {}, {}
+            for run_id, owner, payload in rows:
+                data = json.loads(payload)
+                parents[run_id] = data['run_metadata'].get('parent_run_id')
+                if data['steps_executed'] < data['initial_scenario']['time']['steps']:
+                    retained.add(run_id)
+                else:
+                    counts[owner] = counts.get(owner, 0) + 1
+                    if counts[owner] <= keep:
+                        retained.add(run_id)
+            pending = list(retained)
+            while pending:
+                parent = parents.get(pending.pop())
+                if parent and parent not in retained:
+                    retained.add(parent)
+                    pending.append(parent)
+            stale = [run_id for run_id, _, _ in rows if run_id not in retained]
+            db.executemany('DELETE FROM runs WHERE id = ?', ((run_id,) for run_id in stale))
+        return len(stale)
+
 
 def restore(payload):
     metadata = payload['run_metadata']

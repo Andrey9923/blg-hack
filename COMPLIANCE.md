@@ -18,6 +18,9 @@
 | Анализ эффективности | summary, загрузка аппаратов, история, журнал, график средней энергии/температуры, просрочки и выручка | web-панель |
 | Машиночитаемый результат и replay | `Session.result()`, runtime history, trace и `replay_episode()` сохраняют и повторяют фактическую историю | `scripts/demo.py`, `tests/test_demo.py` |
 | Хранение и доступ | SQLite, восстановление через replay, роли и изоляция владельцев, конфликты ревизий | `tests/test_persistence.py` |
+| Будущие назначения | Редактор ячеек, перенос, прогноз на копии; модель проверяет исполнение, replay воспроизводит команды | `tests/test_operator_tools.py`, `scripts/browser_smoke.cjs` |
+| Операторский анализ | Полный журнал с поиском/страницами, сравнение аппаратов и диапазонов графика, локальные шрифты | `scripts/browser_smoke.cjs` |
+| Обслуживание и API | SQLite backup/retention, ежедневный timer, API v1, CORS, коды ошибок и rate limit | `tests/test_operator_tools.py` |
 | Выбор ветви | Принятие прямого потомка с проверкой неизменности родителя | `POST /api/runs/{id}/adopt`, `tests/test_persistence.py` |
 | Произвольный сценарий и timeline | JSON file picker с валидацией, все задания с пагинацией, все аппараты и шаги с переходом к explain | `web/index.html`, `scripts/ui_smoke.cjs` |
 | Воспроизводимость | Python 3.10+, стандартная библиотека, deterministic planner, команды запуска в README | `.github/workflows/tests.yml`, `examples/README.md` |
