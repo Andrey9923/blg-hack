@@ -3,75 +3,85 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#080b16">
+  <meta name="theme-color" content="#121212">
   <title>COSMO OPS · Операторская</title>
+  <script>
+    (() => {
+      const savedTheme = localStorage.getItem('cosmo-theme');
+      document.documentElement.dataset.theme = savedTheme === 'light' ? 'light' : 'dark';
+    })();
+  </script>
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Montserrat:wght@400;500;600;700;800&display=swap');
     :root {
       color-scheme: dark;
-      --bg: #070911; --panel: #101522; --panel-2: #151b2b; --line: #273149;
-      --text: #f4f7ff; --muted: #8994ad; --dim: #5e6880; --cyan: #67e8f9;
-      --violet: #9d8cff; --pink: #f07fbd; --green: #66e3a2; --amber: #ffcb70;
-      --red: #ff7e91; --shadow: 0 22px 60px rgba(0,0,0,.25);
+      --bg: #121212; --panel: rgba(255,247,207,.055); --panel-2: rgba(255,247,207,.09); --line: rgba(255,247,207,.14);
+      --text: #fff7cf; --muted: rgba(255,247,207,.82); --dim: rgba(255,247,207,.62); --cyan: #ffb340;
+      --violet: #ffb340; --pink: #ffb340; --green: #ffb340; --amber: #ffb340;
+      --red: #ffb340; --shadow: 0 18px 48px rgba(0,0,0,.28); --heading: 'Benzin ExtraBold', Montserrat, sans-serif;
     }
     * { box-sizing: border-box; }
     html { scroll-behavior: smooth; }
-    body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 Manrope, system-ui, sans-serif; }
-    body:before { content: ""; position: fixed; inset: 0; pointer-events: none; opacity: .34; background-image: radial-gradient(#fff 0.7px, transparent .7px); background-size: 47px 47px; mask-image: linear-gradient(to bottom, #000, transparent 70%); }
+    body { margin: 0; background: radial-gradient(circle at 12% 0%, rgba(255,179,64,.18) 0, transparent 34%), radial-gradient(circle at 88% 12%, rgba(255,247,207,.1) 0, transparent 31%), #121212; background-attachment: fixed; color: var(--text); font: 14px/1.55 Montserrat, system-ui, sans-serif; word-spacing: .025em; }
+    body:before { content: ""; position: fixed; inset: 0; pointer-events: none; opacity: .38; background: linear-gradient(125deg, rgba(255,179,64,.1), transparent 36%, rgba(255,247,207,.05)); }
     button, input, select, textarea { font: inherit; }
     button { border: 0; cursor: pointer; color: var(--text); }
     button:disabled { opacity: .45; cursor: not-allowed; }
     .app-shell { position: relative; max-width: 1520px; margin: auto; padding: 0 28px 48px; }
-    .topbar { height: 74px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--line); }
-    .brand { display: flex; align-items: center; gap: 12px; letter-spacing: .13em; font-size: 12px; font-weight: 800; }
-    .brand-mark { width: 33px; height: 33px; border: 1px solid rgba(103,232,249,.6); border-radius: 10px; display: grid; place-items: center; color: var(--cyan); font-size: 15px; box-shadow: 0 0 24px rgba(103,232,249,.16); }
+    .topbar { min-height: 74px; display: flex; align-items: center; justify-content: space-between; gap: 24px; }
+    .brand { display: flex; align-items: center; gap: 12px; letter-spacing: .08em; font-family: var(--heading); font-size: 12px; font-weight: 800; }
+    .brand-mark { width: 34px; height: 34px; border-radius: 11px; display: grid; place-items: center; color: #121212; font-size: 14px; background: linear-gradient(135deg, #ffb340, #fff7cf); }
     .top-meta { display: flex; gap: 24px; align-items: center; color: var(--muted); font-size: 12px; }
-    .live { display: flex; gap: 8px; align-items: center; color: var(--green); text-transform: uppercase; letter-spacing: .12em; font-size: 10px; font-weight: 800; }
-    .live i { width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 12px var(--green); }
+    .live { display: flex; gap: 8px; align-items: center; color: var(--text); letter-spacing: .04em; font-size: 11px; font-weight: 600; }
+    .live i { width: 7px; height: 7px; border-radius: 50%; background: #ffb340; }
     .hero { display: flex; align-items: end; justify-content: space-between; gap: 24px; padding: 44px 0 32px; }
-    .eyebrow { color: var(--cyan); text-transform: uppercase; letter-spacing: .18em; font: 11px 'DM Mono', monospace; }
+    .eyebrow { color: #ffb340; letter-spacing: .06em; font-size: 12px; font-weight: 600; }
     h1, h2, h3, p { margin-top: 0; }
-    h1 { max-width: 760px; margin: 10px 0 10px; font-size: clamp(30px, 4.4vw, 60px); line-height: 1.05; letter-spacing: -.055em; font-weight: 800; }
-    .hero-copy { color: var(--muted); max-width: 690px; font-size: 15px; }
-    .run-chip { min-width: 220px; padding: 15px; border: 1px solid var(--line); border-radius: 15px; background: rgba(16,21,34,.78); box-shadow: var(--shadow); }
+    h1, h2, h3 { font-family: var(--heading); font-weight: 800; }
+    h1 { max-width: 760px; margin: 12px 0 12px; font-size: clamp(30px, 4vw, 56px); line-height: 1.08; letter-spacing: -.035em; text-wrap: balance; }
+    .hero-copy { color: var(--muted); max-width: 690px; font-size: 15px; line-height: 1.65; }
+    .run-chip { min-width: 240px; padding: 17px 18px; border-radius: 16px; background: linear-gradient(135deg, rgba(255,179,64,.28), rgba(255,247,207,.08)); box-shadow: var(--shadow); }
     .run-chip small { display: block; color: var(--dim); text-transform: uppercase; font: 10px 'DM Mono', monospace; letter-spacing: .1em; }
     .run-chip strong { display: block; margin-top: 5px; font: 12px 'DM Mono', monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .layout { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 20px; align-items: start; }
     .sidebar { position: sticky; top: 18px; }
-    .panel { background: linear-gradient(145deg, rgba(21,27,43,.94), rgba(13,17,28,.96)); border: 1px solid var(--line); border-radius: 18px; box-shadow: var(--shadow); }
-    .panel-pad { padding: 20px; }
+    .panel { background: linear-gradient(145deg, rgba(255,247,207,.09), rgba(255,179,64,.035)); border: 0; border-radius: 20px; box-shadow: var(--shadow); }
+    .panel-pad { padding: 22px; }
     .panel-title { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; }
     .panel-title h2, .panel-title h3 { margin: 0; font-size: 14px; letter-spacing: -.015em; }
     .panel-title span { color: var(--dim); font: 10px 'DM Mono', monospace; text-transform: uppercase; letter-spacing: .1em; }
     .field { margin: 14px 0; }
     .field label { display: flex; justify-content: space-between; margin-bottom: 7px; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .07em; }
     .field label em { color: var(--cyan); font-style: normal; font: 10px 'DM Mono', monospace; }
-    select, input, textarea { width: 100%; color: var(--text); background: #0a0e19; border: 1px solid #2d3852; border-radius: 9px; padding: 10px 11px; outline: none; }
-    select:focus, input:focus, textarea:focus { border-color: var(--cyan); box-shadow: 0 0 0 3px rgba(103,232,249,.1); }
+    select, input, textarea { width: 100%; color: var(--text); background: rgba(18,18,18,.72); border: 1px solid rgba(255,247,207,.16); border-radius: 10px; padding: 11px 12px; outline: none; }
+    select:focus, input:focus, textarea:focus { border-color: #ffb340; box-shadow: 0 0 0 3px rgba(255,179,64,.14); }
     input[type=number] { font-family: 'DM Mono', monospace; }
-    .button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; border-radius: 9px; padding: 10px 13px; background: #252d46; font-weight: 700; transition: transform .15s, background .15s; }
-    .button:hover { transform: translateY(-1px); background: #323c5d; }
-    .button.primary { width: 100%; color: #061017; background: var(--cyan); }
-    .button.primary:hover { background: #9af3ff; }
-    .button.accent { color: #0d0b19; background: var(--violet); }
-    .button.ghost { padding: 8px 10px; background: transparent; border: 1px solid var(--line); color: var(--muted); }
-    .button.danger { color: #180b10; background: var(--pink); }
+    .button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; border-radius: 10px; padding: 10px 14px; background: linear-gradient(135deg, rgba(255,247,207,.16), rgba(255,179,64,.14)); font-weight: 600; transition: transform .15s, filter .15s; }
+    .button:hover { transform: translateY(-1px); filter: brightness(1.1); }
+    .button.primary { width: 100%; color: #121212; background: linear-gradient(135deg, #ffb340, #fff7cf); }
+    .button.primary:hover { filter: brightness(1.12); }
+    .button.accent { color: #121212; background: linear-gradient(135deg, #ffb340, #fff7cf); }
+    .button.ghost { padding: 8px 11px; background: rgba(255,247,207,.07); color: var(--text); }
+    .button.danger { color: #121212; background: linear-gradient(135deg, #ffb340, #fff7cf); }
     .button-row { display: flex; flex-wrap: wrap; gap: 8px; }
     .button-row .button { flex: 1; }
-    .rule { height: 1px; background: var(--line); margin: 20px 0; }
+    .rule { height: 1px; background: linear-gradient(90deg, transparent, rgba(255,179,64,.32), transparent); margin: 22px 0; }
     .hint { color: var(--dim); font-size: 11px; margin: 8px 0 0; }
-    .status { padding: 11px 12px; color: var(--muted); background: #0c111f; border: 1px solid var(--line); border-radius: 9px; font-size: 12px; }
-    .status.ok { color: var(--green); border-color: rgba(102,227,162,.3); } .status.error { color: var(--red); border-color: rgba(255,126,145,.35); }
+    .status { padding: 12px 14px; color: var(--text); background: linear-gradient(135deg, rgba(255,247,207,.12), rgba(255,179,64,.1)); border: 0; border-radius: 11px; font-size: 12px; }
+    .status.ok { color: #fff7cf; } .status.error { color: #ffb340; background: linear-gradient(135deg, rgba(255,179,64,.2), rgba(18,18,18,.9)); }
     .main { min-width: 0; display: grid; gap: 20px; }
     .command-bar { display: grid; grid-template-columns: minmax(230px, 1fr) auto; gap: 20px; align-items: center; padding: 20px; }
     .step-label { color: var(--muted); font-size: 12px; }
     .step-label strong { color: var(--text); font-size: 24px; letter-spacing: -.04em; }
-    .progress { height: 5px; background: #252d42; border-radius: 99px; margin-top: 12px; overflow: hidden; }
+    .progress { height: 5px; background: rgba(255,247,207,.12); border-radius: 99px; margin-top: 12px; overflow: hidden; }
     .progress i { display: block; height: 100%; background: linear-gradient(90deg, var(--cyan), var(--violet)); border-radius: inherit; transition: width .3s; }
     .command-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: end; }
     .command-actions .button { white-space: nowrap; }
     .metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
-    .metric { min-width: 0; padding: 17px; background: #101522; border: 1px solid var(--line); border-radius: 14px; }
+    .metric { min-width: 0; padding: 18px; border: 0; border-radius: 16px; background: linear-gradient(145deg, rgba(255,179,64,.2), rgba(255,247,207,.06)); box-shadow: 0 14px 34px rgba(0,0,0,.18); }
+    .metric:nth-child(2) { background: linear-gradient(145deg, rgba(255,247,207,.13), rgba(255,179,64,.055)); }
+    .metric:nth-child(3) { background: linear-gradient(145deg, rgba(255,179,64,.15), rgba(18,18,18,.5)); }
+    .metric:nth-child(4) { background: linear-gradient(145deg, rgba(255,247,207,.1), rgba(255,179,64,.08)); }
     .metric small { display: block; color: var(--muted); text-transform: uppercase; font-size: 10px; letter-spacing: .1em; }
     .metric strong { display: block; margin: 8px 0 2px; font: 24px 'DM Mono', monospace; letter-spacing: -.06em; }
     .metric span { color: var(--dim); font-size: 11px; }
@@ -79,61 +89,244 @@
     .split { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
     .chart { height: 210px; padding: 5px 4px 0; }
     svg { display: block; width: 100%; height: 100%; overflow: visible; }
-    .chart-grid line { stroke: #263049; stroke-width: 1; } .chart-axis { fill: var(--dim); font: 10px 'DM Mono', monospace; }
+    .chart-grid line { stroke: rgba(255,247,207,.14); stroke-width: 1; } .chart-axis { fill: var(--dim); font: 10px 'DM Mono', monospace; }
     .chart-line { fill: none; stroke: var(--cyan); stroke-width: 2.5; } .chart-line.temp { stroke: var(--pink); }
     .legend { display: flex; gap: 14px; color: var(--muted); font-size: 11px; margin: 0 0 2px 20px; }
     .legend i { display: inline-block; width: 14px; height: 3px; margin: 0 5px 3px 0; border-radius: 2px; background: var(--cyan); } .legend i.pink { background: var(--pink); }
     .sat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; }
-    .sat-card { padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: rgba(9,13,23,.7); }
+    .sat-card { padding: 15px; border: 0; border-radius: 14px; background: linear-gradient(145deg, rgba(255,247,207,.1), rgba(255,179,64,.045)); }
     .sat-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
-    .sat-id { font: 12px 'DM Mono', monospace; } .sat-state { width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 9px var(--green); } .sat-state.off { background: var(--red); box-shadow: 0 0 9px var(--red); }
-    .bar { height: 5px; background: #252d42; border-radius: 99px; overflow: hidden; margin: 5px 0 10px; } .bar i { display: block; height: 100%; background: var(--cyan); border-radius: inherit; } .bar.temp i { background: var(--pink); }
+    .sat-id { font: 12px 'DM Mono', monospace; } .sat-state { width: 7px; height: 7px; border-radius: 50%; background: var(--green); } .sat-state.off { background: var(--red); }
+    .bar { height: 5px; background: rgba(255,247,207,.12); border-radius: 99px; overflow: hidden; margin: 6px 0 11px; } .bar i { display: block; height: 100%; background: linear-gradient(90deg, #ffb340, #fff7cf); border-radius: inherit; } .bar.temp i { background: linear-gradient(90deg, #fff7cf, #ffb340); }
     .sat-meta { display: flex; justify-content: space-between; color: var(--muted); font: 11px 'DM Mono', monospace; }
     .sat-action { margin-top: 10px; color: var(--dim); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .tabs { display: flex; gap: 3px; border-bottom: 1px solid var(--line); padding: 0 20px; }
+    .tabs { display: flex; gap: 6px; padding: 8px 20px 0; }
     .tab { padding: 13px 11px; background: transparent; color: var(--muted); border-bottom: 2px solid transparent; font-size: 12px; font-weight: 700; }
-    .tab.active { color: var(--text); border-bottom-color: var(--cyan); }
+    .tab.active { color: var(--text); border-bottom-color: #ffb340; }
     .tab-content { padding: 20px; }
     .table-wrap { overflow: auto; max-height: 430px; }
     table { width: 100%; border-collapse: collapse; min-width: 620px; font-size: 12px; }
-    th { position: sticky; top: 0; z-index: 1; background: #151b2b; color: var(--dim); text-align: left; text-transform: uppercase; font: 10px 'DM Mono', monospace; letter-spacing: .08em; }
-    th, td { padding: 11px 10px; border-bottom: 1px solid rgba(39,49,73,.7); white-space: nowrap; } td { color: var(--muted); } td:first-child { color: var(--text); font-family: 'DM Mono', monospace; }
-    .pill { display: inline-block; border-radius: 99px; padding: 3px 7px; color: var(--cyan); background: rgba(103,232,249,.1); font: 10px 'DM Mono', monospace; } .pill.good { color: var(--green); background: rgba(102,227,162,.1); } .pill.warn { color: var(--amber); background: rgba(255,203,112,.1); } .pill.bad { color: var(--red); background: rgba(255,126,145,.1); }
+    th { position: sticky; top: 0; z-index: 1; background: #121212; color: var(--dim); text-align: left; text-transform: uppercase; font: 10px 'DM Mono', monospace; letter-spacing: .08em; }
+    th, td { padding: 11px 10px; border-bottom: 1px solid rgba(255,247,207,.12); white-space: nowrap; } td { color: var(--muted); } td:first-child { color: var(--text); font-family: 'DM Mono', monospace; }
+    .pill { display: inline-block; border-radius: 99px; padding: 3px 7px; color: #ffb340; background: rgba(255,179,64,.12); font: 10px 'DM Mono', monospace; } .pill.good { color: #fff7cf; background: rgba(255,247,207,.1); } .pill.warn { color: #ffb340; background: rgba(255,179,64,.12); } .pill.bad { color: #ffb340; background: rgba(255,179,64,.2); }
     .event-grid { display: grid; grid-template-columns: 190px 1fr; gap: 18px; }
-    .event-type { display: grid; gap: 7px; align-content: start; } .event-type button { padding: 10px; text-align: left; border: 1px solid var(--line); border-radius: 9px; background: transparent; color: var(--muted); } .event-type button.active { color: var(--text); border-color: var(--cyan); background: rgba(103,232,249,.08); }
+    .event-type { display: grid; gap: 8px; align-content: start; } .event-type button { padding: 11px 12px; text-align: left; border: 0; border-radius: 10px; background: rgba(255,247,207,.07); color: var(--muted); } .event-type button.active { color: #121212; background: linear-gradient(135deg, #ffb340, #fff7cf); }
     .event-form { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px 12px; } .event-form .full { grid-column: 1 / -1; }
     textarea { min-height: 126px; resize: vertical; font: 11px/1.55 'DM Mono', monospace; }
     .compare-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
-    .branch { padding: 16px; border: 1px solid var(--line); border-radius: 12px; background: #0b101c; } .branch h3 { margin-bottom: 10px; font-size: 13px; } .branch strong { color: var(--cyan); font: 22px 'DM Mono', monospace; }
+    .branch { padding: 17px; border: 0; border-radius: 14px; background: linear-gradient(145deg, rgba(255,179,64,.16), rgba(255,247,207,.06)); } .branch h3 { margin-bottom: 10px; font-size: 13px; } .branch strong { color: #ffb340; font: 22px 'DM Mono', monospace; }
     .branch dl { display: grid; grid-template-columns: 1fr auto; gap: 5px; margin: 12px 0 0; color: var(--muted); font-size: 11px; } .branch dd { margin: 0; color: var(--text); font-family: 'DM Mono', monospace; }
     .empty { color: var(--dim); padding: 18px 0; }
     .footer-note { color: var(--dim); text-align: center; font-size: 11px; padding: 18px 0 0; }
     @media (max-width: 1100px) { .layout { grid-template-columns: 250px minmax(0,1fr); } .hero { align-items: start; flex-direction: column; } .run-chip { width: 100%; } }
     @media (max-width: 820px) { .app-shell { padding: 0 14px 30px; } .top-meta > span { display: none; } .layout, .split { grid-template-columns: 1fr; } .sidebar { position: static; } .metrics { grid-template-columns: repeat(2, 1fr); } .command-bar { grid-template-columns: 1fr; } .command-actions { justify-content: start; } .event-grid { grid-template-columns: 1fr; } }
     @media (max-width: 500px) { .metrics { grid-template-columns: 1fr 1fr; gap: 7px; } .metric { padding: 12px; } .metric strong { font-size: 18px; } .compare-grid { grid-template-columns: 1fr; } .event-form { grid-template-columns: 1fr; } .event-form .full { grid-column: auto; } }
+
+    /* Minimal visual system and theme tokens */
+    :root,
+    :root[data-theme="dark"] {
+      color-scheme: dark;
+      --bg: #151411;
+      --bg-soft: #1b1a16;
+      --surface: #201f1a;
+      --surface-soft: #25231d;
+      --panel: rgba(255, 250, 227, .055);
+      --panel-2: rgba(255, 250, 227, .085);
+      --line: rgba(255, 250, 227, .12);
+      --text: #fff8df;
+      --muted: rgba(255, 248, 223, .74);
+      --dim: rgba(255, 248, 223, .5);
+      --accent: #ffb726;
+      --accent-soft: #ffc03f;
+      --accent-contrast: #1c1c1c;
+      --danger: #ff8d68;
+      --shadow: 0 16px 44px rgba(0, 0, 0, .22);
+      --shadow-soft: 0 8px 24px rgba(0, 0, 0, .13);
+      --input: rgba(10, 10, 9, .32);
+      --grid: rgba(255, 250, 227, .11);
+      --cyan: var(--accent); --violet: var(--accent-soft); --pink: #ffc14a;
+      --green: #ffd16e; --amber: #ffb726; --red: #ff8d68;
+    }
+    :root[data-theme="light"] {
+      color-scheme: light;
+      --bg: #fffae3;
+      --bg-soft: #fff8dc;
+      --surface: #fffdf2;
+      --surface-soft: #fff9e5;
+      --panel: rgba(255, 255, 255, .54);
+      --panel-2: rgba(255, 255, 255, .78);
+      --line: rgba(28, 28, 28, .105);
+      --text: #1c1c1c;
+      --muted: rgba(28, 28, 28, .7);
+      --dim: rgba(28, 28, 28, .5);
+      --accent: #ffb726;
+      --accent-soft: #ffc041;
+      --accent-contrast: #1c1c1c;
+      --danger: #a7462e;
+      --shadow: 0 16px 44px rgba(85, 63, 12, .075);
+      --shadow-soft: 0 8px 22px rgba(85, 63, 12, .06);
+      --input: rgba(255, 255, 255, .62);
+      --grid: rgba(28, 28, 28, .09);
+      --cyan: var(--accent); --violet: var(--accent-soft); --pink: #eea91d;
+      --green: #be8310; --amber: #d58f08; --red: #a7462e;
+    }
+    html { background: var(--bg); }
+    body {
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at 8% -8%, color-mix(in srgb, var(--accent) 10%, transparent) 0, transparent 38%),
+        radial-gradient(circle at 94% 9%, color-mix(in srgb, var(--surface) 58%, transparent) 0, transparent 35%),
+        var(--bg);
+      color: var(--text);
+      transition: background-color .55s cubic-bezier(.22, 1, .36, 1), color .42s ease;
+    }
+    body:before {
+      opacity: .55;
+      background: linear-gradient(125deg, color-mix(in srgb, var(--accent) 4%, transparent), transparent 42%, color-mix(in srgb, var(--surface) 24%, transparent));
+      transition: opacity .45s ease, background .55s ease;
+    }
+    button, input, select, textarea, .panel, .metric, .sat-card, .branch, .run-chip, .status, th, .event-type button {
+      transition: color .38s ease, background-color .48s ease, border-color .38s ease, box-shadow .38s ease, transform .3s cubic-bezier(.22, 1, .36, 1), opacity .3s ease;
+    }
+    button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 3px;
+    }
+    .top-meta { gap: 16px; }
+    .brand-mark {
+      color: var(--accent-contrast);
+      background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 86%, var(--surface)));
+      box-shadow: 0 7px 20px color-mix(in srgb, var(--accent) 20%, transparent);
+    }
+    .live i { background: var(--accent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 13%, transparent); }
+    .eyebrow { color: var(--accent); }
+    .theme-toggle {
+      position: relative; width: 58px; height: 32px; flex: 0 0 auto; padding: 0;
+      border: 1px solid var(--line); border-radius: 999px; color: var(--text);
+      background: color-mix(in srgb, var(--surface) 72%, transparent);
+      box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--surface) 35%, transparent), var(--shadow-soft);
+      overflow: hidden;
+    }
+    .theme-toggle:hover { transform: translateY(-1px); border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+    .theme-toggle:active { transform: scale(.96); }
+    .theme-toggle__thumb {
+      position: absolute; top: 3px; left: 3px; width: 24px; height: 24px; border-radius: 50%;
+      display: grid; place-items: center; color: var(--accent-contrast); background: var(--accent);
+      box-shadow: 0 4px 12px color-mix(in srgb, var(--accent) 32%, transparent);
+      transform: translateX(0) rotate(0deg);
+      transition: transform .52s cubic-bezier(.34, 1.56, .64, 1), background-color .4s ease;
+    }
+    :root[data-theme="light"] .theme-toggle__thumb { transform: translateX(26px) rotate(180deg); }
+    .theme-toggle svg { position: absolute; width: 13px; height: 13px; inset: 5.5px; transition: opacity .25s ease, transform .45s ease; }
+    .theme-toggle .sun { opacity: 0; transform: scale(.45) rotate(-80deg); }
+    .theme-toggle .moon { opacity: 1; transform: scale(1) rotate(0); }
+    :root[data-theme="light"] .theme-toggle .sun { opacity: 1; transform: scale(1) rotate(0); }
+    :root[data-theme="light"] .theme-toggle .moon { opacity: 0; transform: scale(.45) rotate(80deg); }
+    .run-chip, .panel, .metric, .sat-card, .branch {
+      border: 1px solid var(--line);
+      background: linear-gradient(145deg, color-mix(in srgb, var(--surface) 94%, var(--accent)), var(--surface));
+    }
+    .panel { border-radius: 18px; box-shadow: var(--shadow); }
+    .run-chip { background: linear-gradient(135deg, color-mix(in srgb, var(--surface) 88%, var(--accent)), var(--surface)); box-shadow: var(--shadow-soft); }
+    .metric { border-radius: 14px; box-shadow: var(--shadow-soft); }
+    .metric:nth-child(2), .metric:nth-child(3), .metric:nth-child(4) {
+      background: linear-gradient(145deg, color-mix(in srgb, var(--surface) 96%, var(--accent)), var(--surface));
+    }
+    .metric:hover, .sat-card:hover, .branch:hover { transform: translateY(-2px); border-color: color-mix(in srgb, var(--accent) 34%, var(--line)); box-shadow: var(--shadow); }
+    select, input, textarea {
+      color: var(--text); background: var(--input); border-color: var(--line); border-radius: 9px;
+    }
+    select:focus, input:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 15%, transparent); }
+    .button {
+      border: 1px solid var(--line); border-radius: 9px; color: var(--text);
+      background: color-mix(in srgb, var(--surface-soft) 94%, var(--accent));
+      transition: transform .28s cubic-bezier(.22, 1, .36, 1), background-color .32s ease, border-color .32s ease, box-shadow .32s ease;
+    }
+    .button:hover { transform: translateY(-2px); filter: none; border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); box-shadow: var(--shadow-soft); }
+    .button:active { transform: translateY(0) scale(.98); }
+    .button.primary, .button.accent, .button.danger {
+      color: var(--accent-contrast); border-color: transparent;
+      background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 88%, var(--surface)));
+      box-shadow: 0 8px 20px color-mix(in srgb, var(--accent) 18%, transparent);
+    }
+    .button.primary:hover { filter: none; }
+    .button.ghost { color: var(--text); background: color-mix(in srgb, var(--surface-soft) 76%, transparent); }
+    .rule { background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--accent) 24%, var(--line)), transparent); }
+    .status { border: 1px solid var(--line); background: color-mix(in srgb, var(--surface) 92%, var(--accent)); }
+    .status.ok { color: var(--text); }
+    .status.error { color: var(--danger); background: color-mix(in srgb, var(--surface) 91%, var(--danger)); }
+    .progress, .bar { background: color-mix(in srgb, var(--text) 9%, transparent); }
+    .progress i, .bar i, .bar.temp i { background: linear-gradient(90deg, var(--accent), var(--accent-soft)); transition: width .65s cubic-bezier(.22, 1, .36, 1); }
+    .chart-grid line { stroke: var(--grid); }
+    .sat-card { border-radius: 12px; }
+    .tabs { position: relative; gap: 4px; border-bottom: 1px solid var(--line); }
+    .tab { position: relative; border: 0; color: var(--muted); transition: color .3s ease, transform .3s ease; }
+    .tab:after { content: ""; position: absolute; height: 2px; left: 11px; right: 11px; bottom: -1px; border-radius: 2px; background: var(--accent); transform: scaleX(0); transition: transform .4s cubic-bezier(.22, 1, .36, 1); }
+    .tab:hover { color: var(--text); transform: translateY(-1px); }
+    .tab.active { color: var(--text); border-bottom-color: transparent; }
+    .tab.active:after { transform: scaleX(1); }
+    .tab-content { transform-origin: 50% 0; }
+    .tab-content.is-entering { animation: tabIn .42s cubic-bezier(.22, 1, .36, 1) both; }
+    .tab-content.is-leaving { animation: tabOut .18s ease both; }
+    th { background: var(--surface); }
+    th, td { border-bottom-color: var(--line); }
+    tbody tr { transition: background-color .25s ease, transform .25s ease; }
+    tbody tr:hover { background: color-mix(in srgb, var(--accent) 6%, transparent); }
+    .pill { color: color-mix(in srgb, var(--accent) 70%, var(--text)); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+    .pill.good { color: var(--text); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+    .pill.bad { color: var(--danger); background: color-mix(in srgb, var(--danger) 11%, transparent); }
+    .event-type button { border: 1px solid transparent; background: color-mix(in srgb, var(--surface-soft) 82%, transparent); }
+    .event-type button:hover { color: var(--text); transform: translateX(3px); }
+    .event-type button.active { color: var(--accent-contrast); border-color: transparent; background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 88%, var(--surface))); transform: translateX(3px); }
+    .event-form.is-refreshing { animation: formIn .42s cubic-bezier(.22, 1, .36, 1) both; }
+    .metric, .sat-card, tbody tr { animation: contentIn .42s cubic-bezier(.22, 1, .36, 1) both; }
+    .metric:nth-child(2), .sat-card:nth-child(2) { animation-delay: .035s; }
+    .metric:nth-child(3), .sat-card:nth-child(3) { animation-delay: .07s; }
+    .metric:nth-child(4), .sat-card:nth-child(4) { animation-delay: .105s; }
+    ::view-transition-old(root), ::view-transition-new(root) { animation: none; mix-blend-mode: normal; }
+    ::view-transition-new(root) { clip-path: circle(0 at var(--theme-x, 100%) var(--theme-y, 0)); animation: themeReveal .65s cubic-bezier(.22, 1, .36, 1) forwards; }
+    ::view-transition-old(root) { z-index: 1; } ::view-transition-new(root) { z-index: 2; }
+    @keyframes themeReveal { to { clip-path: circle(150% at var(--theme-x, 100%) var(--theme-y, 0)); } }
+    @keyframes tabIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes tabOut { to { opacity: 0; transform: translateY(-4px); } }
+    @keyframes formIn { from { opacity: .2; transform: translateX(8px); } to { opacity: 1; transform: translateX(0); } }
+    @keyframes contentIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+    @media (max-width: 820px) { .top-meta { gap: 10px; } .theme-toggle { width: 54px; } :root[data-theme="light"] .theme-toggle__thumb { transform: translateX(22px) rotate(180deg); } }
+    @media (prefers-reduced-motion: reduce) {
+      *, *:before, *:after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+    }
   </style>
 </head>
 <body>
   <div class="app-shell">
     <header class="topbar">
-      <div class="brand"><div class="brand-mark">✦</div><span>COSMO // OPS</span></div>
-      <div class="top-meta"><span>АВТОНОМНОЕ УПРАВЛЕНИЕ ГРУППИРОВКОЙ</span><div class="live"><i></i> Система готова</div></div>
+      <div class="brand"><div class="brand-mark">✦</div><span>COSMO OPS</span></div>
+      <div class="top-meta">
+        <span>Управление спутниковой группировкой</span>
+        <button class="theme-toggle" id="themeToggle" type="button" aria-label="Включить светлую тему" aria-pressed="false" title="Сменить тему">
+          <span class="theme-toggle__thumb" aria-hidden="true">
+            <svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3.5"/><path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.65 17.65l1.42 1.42M2 12h2M20 12h2M4.93 19.07l1.42-1.42M17.65 6.35l1.42-1.42"/></svg>
+            <svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 15.1A8.5 8.5 0 0 1 8.9 4a8.5 8.5 0 1 0 11.1 11.1Z"/></svg>
+          </span>
+        </button>
+        <div class="live"><i></i> Система готова</div>
+      </div>
     </header>
 
     <section class="hero">
-      <div><div class="eyebrow">КосмоХакатон 2026 · control room</div><h1>Панель управления<br>орбитальной сменой</h1><p class="hero-copy">Планируйте работу группировки, отслеживайте ограничения ресурсов и принимайте решения на границах пятиминутных шагов.</p></div>
-      <div class="run-chip"><small>Активный запуск</small><strong id="runIdLabel">NO ACTIVE RUN</strong><div class="hint" id="runMetaLabel">Выберите сценарий и создайте смену</div></div>
+      <div><div class="eyebrow">КосмоХакатон 2026</div><h1>Панель управления орбитальной сменой</h1><p class="hero-copy">Планируйте работу группировки, отслеживайте ограничения ресурсов и принимайте решения на границах пятиминутных шагов.</p></div>
+      <div class="run-chip"><small>Активный запуск</small><strong id="runIdLabel">Запуск не выбран</strong><div class="hint" id="runMetaLabel">Выберите сценарий и создайте смену</div></div>
     </section>
 
     <div class="layout">
       <aside class="sidebar">
         <section class="panel panel-pad">
-          <div class="panel-title"><h2>Конфигурация смены</h2><span>01 / setup</span></div>
+          <div class="panel-title"><h2>Конфигурация смены</h2></div>
           <div class="field"><label for="scenario">Сценарий <em id="scenarioCount">—</em></label><select id="scenario"></select><p class="hint" id="scenarioInfo">Загрузка сценариев…</p></div>
           <div class="field"><label for="planner">Планировщик</label><select id="planner"><option value="strategic">Strategic · rolling horizon</option><option value="baseline">Baseline · reference</option></select></div>
           <div class="field"><label for="goal">Цель управления</label><select id="goal"><option value="priority">Приоритетные обязательства</option><option value="revenue">Коммерческая отдача</option></select></div>
           <div class="rule"></div>
-          <div class="panel-title"><h3>Экспериментальные условия</h3><span>optional</span></div>
+          <div class="panel-title"><h3>Экспериментальные условия</h3></div>
           <div class="field"><label for="tuneSat">Аппарат</label><select id="tuneSat"><option value="">После создания</option></select></div>
           <div class="field"><label for="soc">Начальный заряд, %</label><input id="soc" type="number" min="0" max="100" step="1" placeholder="Без изменения"></div>
           <div class="field"><label for="solar">Солнечная мощность ×</label><input id="solar" type="number" min="0" max="10" step="0.05" placeholder="1.00"></div>
@@ -158,32 +351,36 @@
         </section>
 
         <section class="split">
-          <section class="panel panel-pad"><div class="panel-title"><h2>Энергия группировки</h2><span>telemetry / Wh</span></div><div class="legend"><span><i></i>средний заряд</span><span><i class="pink"></i>средняя температура</span></div><div class="chart" id="telemetryChart"><div class="empty">График появится после первого шага.</div></div></section>
-          <section class="panel panel-pad"><div class="panel-title"><h2>Оперативная сводка</h2><span>decision support</span></div><div id="insight" class="empty">Запустите расчёт — здесь появятся узкие места и рекомендации оператора.</div><div id="reasonList"></div></section>
+          <section class="panel panel-pad"><div class="panel-title"><h2>Энергия группировки</h2></div><div class="legend"><span><i></i>средний заряд</span><span><i class="pink"></i>средняя температура</span></div><div class="chart" id="telemetryChart"><div class="empty">График появится после первого шага.</div></div></section>
+          <section class="panel panel-pad"><div class="panel-title"><h2>Оперативная сводка</h2></div><div id="insight" class="empty">Запустите расчёт — здесь появятся узкие места и рекомендации оператора.</div><div id="reasonList"></div></section>
         </section>
 
-        <section class="panel panel-pad"><div class="panel-title"><h2>Состояние аппаратов</h2><span id="satCount">0 units</span></div><div class="sat-grid" id="satellites"><div class="empty">Нет активной смены.</div></div></section>
+        <section class="panel panel-pad"><div class="panel-title"><h2>Состояние аппаратов</h2><span id="satCount">0 аппаратов</span></div><div class="sat-grid" id="satellites"><div class="empty">Нет активной смены.</div></div></section>
 
         <section class="panel">
           <nav class="tabs"><button class="tab active" data-tab="jobs">Задания</button><button class="tab" data-tab="trace">Журнал операций</button><button class="tab" data-tab="history">История смены</button></nav>
           <div class="tab-content" id="jobsTab"><div class="panel-title"><h2>Очередь обязательств</h2><input id="jobFilter" style="max-width:220px" placeholder="Поиск по ID…"></div><div class="table-wrap" id="jobs"><div class="empty">Нет данных.</div></div></div>
-          <div class="tab-content" id="traceTab" hidden><div class="panel-title"><h2>Что произошло на шаге</h2><span>последние записи</span></div><div class="table-wrap" id="trace"><div class="empty">Журнал появится после выполнения шага.</div></div></div>
-          <div class="tab-content" id="historyTab" hidden><div class="panel-title"><h2>Контрольные точки</h2><span>audit trail</span></div><div class="table-wrap" id="history"><div class="empty">События и изменения цели появятся здесь.</div></div></div>
+          <div class="tab-content" id="traceTab" hidden><div class="panel-title"><h2>Что произошло на шаге</h2></div><div class="table-wrap" id="trace"><div class="empty">Журнал появится после выполнения шага.</div></div></div>
+          <div class="tab-content" id="historyTab" hidden><div class="panel-title"><h2>Контрольные точки</h2></div><div class="table-wrap" id="history"><div class="empty">События и изменения цели появятся здесь.</div></div></div>
         </section>
 
-        <section class="panel panel-pad"><div class="panel-title"><h2>Новое сообщение</h2><span>02 / boundary event</span></div><div class="event-grid"><div class="event-type"><button class="active" data-event="satellite_outage">Недоступность аппарата</button><button data-event="close_downlink">Закрытие downlink</button><button data-event="add_jobs">Новая заявка</button></div><div><div class="event-form" id="eventForm"></div><div class="rule"></div><div class="button-row"><button class="button danger" id="sendEvent">Принять сообщение на текущей границе</button><button class="button ghost" id="showJson">JSON вручную</button></div><textarea id="eventJson" hidden></textarea><p class="hint">Сообщение принимается атомарно только на текущем незавершённом шаге. Будущие ограничения не раскрываются планировщику заранее.</p></div></div></section>
+        <section class="panel panel-pad"><div class="panel-title"><h2>Новое сообщение</h2></div><div class="event-grid"><div class="event-type"><button class="active" data-event="satellite_outage">Недоступность аппарата</button><button data-event="close_downlink">Закрытие downlink</button><button data-event="add_jobs">Новая заявка</button></div><div><div class="event-form" id="eventForm"></div><div class="rule"></div><div class="button-row"><button class="button danger" id="sendEvent">Принять сообщение на текущей границе</button><button class="button ghost" id="showJson">JSON вручную</button></div><textarea id="eventJson" hidden></textarea><p class="hint">Сообщение принимается атомарно только на текущем незавершённом шаге. Будущие ограничения не раскрываются планировщику заранее.</p></div></div></section>
 
         <section class="split">
-          <section class="panel panel-pad"><div class="panel-title"><h2>Разбор решения</h2><span>03 / explain</span></div><div class="button-row"><input id="explainStep" type="number" min="0" placeholder="Шаг"><select id="explainSat"><option value="">Аппарат</option></select><button class="button" id="explainBtn">Объяснить</button></div><div id="explanation" class="empty">Выберите запись журнала, чтобы увидеть причину действия, ресурсные ограничения и последствия.</div></section>
-          <section class="panel panel-pad"><div class="panel-title"><h2>Сравнение продолжений</h2><span>same checkpoint</span></div><p class="hint">Создаёт две независимые ветви из текущего фактического состояния и доводит их до конца смены.</p><button class="button accent" id="compareBtn">Сравнить priority vs revenue →</button><div id="comparison" style="margin-top:14px"></div></section>
+          <section class="panel panel-pad"><div class="panel-title"><h2>Разбор решения</h2></div><div class="button-row"><input id="explainStep" type="number" min="0" placeholder="Шаг"><select id="explainSat"><option value="">Аппарат</option></select><button class="button" id="explainBtn">Объяснить</button></div><div id="explanation" class="empty">Выберите запись журнала, чтобы увидеть причину действия, ресурсные ограничения и последствия.</div></section>
+          <section class="panel panel-pad"><div class="panel-title"><h2>Сравнение продолжений</h2></div><p class="hint">Создаёт две независимые ветви из текущего фактического состояния и доводит их до конца смены.</p><button class="button accent" id="compareBtn">Сравнить цели →</button><div id="comparison" style="margin-top:14px"></div></section>
         </section>
       </main>
     </div>
-    <div class="footer-note">COSMO // OPS · детерминированный планировщик · все решения воспроизводимы через result JSON</div>
+    <div class="footer-note">COSMO OPS · детерминированный планировщик</div>
   </div>
 <script>
   const $ = id => document.getElementById(id);
   let scenarios = [], current = null, currentRunId = '', eventType = 'satellite_outage';
+  const themeColor = document.querySelector('meta[name="theme-color"]');
+  function syncThemeUI() { const light = document.documentElement.dataset.theme === 'light'; $('themeToggle').setAttribute('aria-pressed', String(light)); $('themeToggle').setAttribute('aria-label', light ? 'Включить тёмную тему' : 'Включить светлую тему'); themeColor.content = light ? '#fffae3' : '#151411'; }
+  function toggleTheme(event) { const next = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light'; const rect = event.currentTarget.getBoundingClientRect(); document.documentElement.style.setProperty('--theme-x', `${rect.left + rect.width / 2}px`); document.documentElement.style.setProperty('--theme-y', `${rect.top + rect.height / 2}px`); const apply = () => { document.documentElement.dataset.theme = next; localStorage.setItem('cosmo-theme', next); syncThemeUI(); }; if (document.startViewTransition && !matchMedia('(prefers-reduced-motion: reduce)').matches) document.startViewTransition(apply); else apply(); }
+  function animateRefresh(element, className = 'is-refreshing') { element.classList.remove(className); requestAnimationFrame(() => element.classList.add(className)); }
   const esc = value => String(value ?? '').replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
   const num = (value, digits = 1) => typeof value === 'number' ? value.toLocaleString('ru-RU', {maximumFractionDigits: digits}) : '—';
   const api = async (url, options = {}) => { const response = await fetch(url, {headers: {'Content-Type':'application/json'}, ...options}); let data; try { data = await response.json(); } catch (_) { data = {}; } if (!response.ok) throw new Error(data.message || 'Сервис вернул ошибку'); return data; };
@@ -194,8 +391,8 @@
   function settings() { const payload = {}; const sid = $('tuneSat').value; if (sid) { payload.satellite_id = sid; if ($('soc').value !== '') payload.initial_soc_pct = Number($('soc').value); if ($('solar').value !== '') payload.solar_multiplier = Number($('solar').value); } if ($('priorityJob').value) { payload.job_id = $('priorityJob').value; payload.priority = Number($('priorityValue').value); } if (sid && $('outageStart').value !== '' && $('outageEnd').value !== '') payload.outage = {satellite_ids: [sid], start_step: Number($('outageStart').value), end_step: Number($('outageEnd').value)}; return payload; }
   async function createRun() { try { const body = {scenario_id: $('scenario').value, planner: $('planner').value, goal: $('goal').value}; const custom = settings(); if (Object.keys(custom).length) body.settings = custom; const data = await api('/api/runs', {method:'POST', body: JSON.stringify(body)}); currentRunId = data.run_id; render(data); status('Смена создана. Планировщик готов к первому шагу.'); $('runIdLabel').textContent = currentRunId; $('runMetaLabel').textContent = `${data.metadata.planner} · ${data.metadata.goal}`; localStorage.setItem('cosmo-last-config', JSON.stringify(body)); } catch (e) { status(e.message, true); } }
   function populateSelectors(obs) { const ids = Object.keys(obs.state || {}); const old = $('tuneSat').value; $('tuneSat').innerHTML = `<option value="">Аппарат без изменения</option>` + ids.map(id => `<option value="${esc(id)}">${esc(id)}</option>`).join(''); $('tuneSat').value = ids.includes(old) ? old : (ids[0] || ''); $('explainSat').innerHTML = ids.map(id => `<option value="${esc(id)}">${esc(id)}</option>`).join(''); const jobs = Object.values(obs.jobs || {}); const oldJob = $('priorityJob').value; $('priorityJob').innerHTML = '<option value="">Приоритет без изменения</option>' + jobs.map(j => `<option value="${esc(j.id)}" data-priority="${j.priority}">${esc(j.id)} · P${j.priority}</option>`).join(''); $('priorityJob').value = jobs.some(j => j.id === oldJob) ? oldJob : ''; $('explainSat').value = ids[0] || ''; }
-  function render(data) { current = data; const obs = data.observation || {}; populateSelectors(obs); const total = data.available_actions?.scenario_steps || 0; const step = obs.step || 0; $('stepNow').textContent = step; $('stepTotal').textContent = `/ ${total}`; $('progressBar').style.width = total ? `${Math.round(step / total * 100)}%` : '0%'; $('stepHint').textContent = step >= total ? 'Смена завершена · доступен экспорт результата' : `Следующая граница: шаг ${step} · сообщения принимаются до выбора действий`; $('runIdLabel').textContent = data.run_id || currentRunId || 'NO ACTIVE RUN'; const s = data.summary || {}; $('metrics').innerHTML = `<div class="metric cyan"><small>Выручка</small><strong>$${num(s.revenue_usd, 2)}</strong><span>USD · факт</span></div><div class="metric green"><small>Завершено</small><strong>${num(s.jobs_completed, 0)}</strong><span>из ${num(s.jobs_total, 0)} заданий</span></div><div class="metric pink"><small>Критические</small><strong>${num(s.critical_jobs_completed_on_time, 0)} / ${num(s.critical_jobs_due, 0)}</strong><span>приоритет 3</span></div><div class="metric amber"><small>Минимальный SOC</small><strong>${num(s.minimum_soc_pct, 1)}%</strong><span>нижняя точка заряда</span></div>`; renderSatellites(obs, data.telemetry || {}); renderJobs(obs.jobs || {}); renderTrace(data.telemetry || {}, step); renderHistory(data.history || []); renderCharts(data.telemetry || {}); renderInsight(s, data.telemetry || {}); }
-  function renderSatellites(obs, telemetry) { const entries = Object.entries(obs.state || {}); $('satCount').textContent = `${entries.length} units`; $('satellites').innerHTML = entries.length ? entries.map(([id, st]) => { const pct = Math.max(0, Math.min(100, st.energy_wh / (current.satellite_specs?.[id]?.capacity_wh || 1) * 100)); const history = telemetry[id] || []; const last = history[history.length - 1]; return `<article class="sat-card"><div class="sat-head"><span class="sat-id">${esc(id)}</span><i class="sat-state ${obs.available?.[id] ? '' : 'off'}"></i></div><div class="sat-meta"><span>SOC</span><b>${num(pct)}%</b></div><div class="bar"><i style="width:${pct}%"></i></div><div class="sat-meta"><span>THERMAL</span><b>${num(st.temp_c)}°C</b></div><div class="bar temp"><i style="width:${Math.max(0, Math.min(100, st.temp_c / 45 * 100))}%"></i></div><div class="sat-action">${last ? `${esc(last.executed)} · ${esc(last.reason)}` : 'Ожидание первого решения'}</div></article>`; }).join('') : '<div class="empty">Нет данных.</div>'; }
+  function render(data) { current = data; const obs = data.observation || {}; populateSelectors(obs); const total = data.available_actions?.scenario_steps || 0; const step = obs.step || 0; $('stepNow').textContent = step; $('stepTotal').textContent = `/ ${total}`; $('progressBar').style.width = total ? `${Math.round(step / total * 100)}%` : '0%'; $('stepHint').textContent = step >= total ? 'Смена завершена · доступен экспорт результата' : `Следующая граница: шаг ${step} · сообщения принимаются до выбора действий`; $('runIdLabel').textContent = data.run_id || currentRunId || 'Запуск не выбран'; const s = data.summary || {}; $('metrics').innerHTML = `<div class="metric cyan"><small>Выручка</small><strong>$${num(s.revenue_usd, 2)}</strong><span>USD · факт</span></div><div class="metric green"><small>Завершено</small><strong>${num(s.jobs_completed, 0)}</strong><span>из ${num(s.jobs_total, 0)} заданий</span></div><div class="metric pink"><small>Критические</small><strong>${num(s.critical_jobs_completed_on_time, 0)} / ${num(s.critical_jobs_due, 0)}</strong><span>приоритет 3</span></div><div class="metric amber"><small>Минимальный SOC</small><strong>${num(s.minimum_soc_pct, 1)}%</strong><span>нижняя точка заряда</span></div>`; renderSatellites(obs, data.telemetry || {}); renderJobs(obs.jobs || {}); renderTrace(data.telemetry || {}, step); renderHistory(data.history || []); renderCharts(data.telemetry || {}); renderInsight(s, data.telemetry || {}); }
+  function renderSatellites(obs, telemetry) { const entries = Object.entries(obs.state || {}); $('satCount').textContent = `${entries.length} аппаратов`; $('satellites').innerHTML = entries.length ? entries.map(([id, st]) => { const pct = Math.max(0, Math.min(100, st.energy_wh / (current.satellite_specs?.[id]?.capacity_wh || 1) * 100)); const history = telemetry[id] || []; const last = history[history.length - 1]; return `<article class="sat-card"><div class="sat-head"><span class="sat-id">${esc(id)}</span><i class="sat-state ${obs.available?.[id] ? '' : 'off'}"></i></div><div class="sat-meta"><span>Заряд</span><b>${num(pct)}%</b></div><div class="bar"><i style="width:${pct}%"></i></div><div class="sat-meta"><span>Температура</span><b>${num(st.temp_c)}°C</b></div><div class="bar temp"><i style="width:${Math.max(0, Math.min(100, st.temp_c / 45 * 100))}%"></i></div><div class="sat-action">${last ? `${esc(last.executed)} · ${esc(last.reason)}` : 'Ожидание первого решения'}</div></article>`; }).join('') : '<div class="empty">Нет данных.</div>'; }
   function renderJobs(jobMap) { const filter = ($('jobFilter').value || '').toLowerCase(); const jobs = Object.values(jobMap).filter(j => j.id.toLowerCase().includes(filter)).sort((a,b) => (a.deadline_step - b.deadline_step) || a.id.localeCompare(b.id)).slice(0, 160); $('jobs').innerHTML = jobs.length ? `<table><thead><tr><th>ID</th><th>Тип</th><th>Статус</th><th>Прогресс</th><th>Дедлайн</th><th>Приоритет</th><th>Стоимость</th></tr></thead><tbody>${jobs.map(j => { const done = j.completed_step != null, missed = !done && j.deadline_step <= (current.observation.step || 0); return `<tr><td>${esc(j.id)}</td><td>${esc(j.kind)}</td><td><span class="pill ${done ? 'good' : missed ? 'bad' : 'warn'}">${done ? 'завершено' : missed ? 'просрочено' : 'в работе'}</span></td><td>${j.work_steps - j.remaining_steps} / ${j.work_steps}</td><td>${j.deadline_step}</td><td>P${j.priority}</td><td>$${num(j.value_usd, 2)}</td></tr>`; }).join('')}</tbody></table>` : '<div class="empty">Задания не найдены.</div>'; }
   function renderTrace(telemetry, step) { const rows = Object.values(telemetry).flat().sort((a,b) => b.step - a.step).slice(0, 120); $('trace').innerHTML = rows.length ? `<table><thead><tr><th>Шаг</th><th>Аппарат</th><th>Операция</th><th>Причина</th><th>Заряд</th><th>Задание</th></tr></thead><tbody>${rows.map(r => `<tr><td>${r.step}</td><td>${esc(r.satellite_id || '')}</td><td><span class="pill ${r.executed === 'idle' ? '' : 'good'}">${esc(r.executed)}</span></td><td>${esc(r.reason)}</td><td>${num(r.energy_wh)} Wh</td><td>${esc(r.job_id || '—')}</td></tr>`).join('')}</tbody></table>` : '<div class="empty">Журнал появится после выполнения шага.</div>'; }
   function renderHistory(history) { $('history').innerHTML = history.length ? `<table><thead><tr><th>Шаг</th><th>Тип</th><th>Детали</th></tr></thead><tbody>${history.slice().reverse().map(h => `<tr><td>${h.step}</td><td><span class="pill">${esc(h.type)}</span></td><td>${esc(h.reason || h.to || h.event?.type || (h.command_count ? `${h.command_count} команд` : ''))}</td></tr>`).join('')}</tbody></table>` : '<div class="empty">История появится после шага, события или переключения цели.</div>'; }
@@ -209,9 +406,10 @@
   async function openBranch(runId) { try { const data = await api(`/api/runs/${encodeURIComponent(runId)}`); currentRunId = runId; render(data); $('runIdLabel').textContent = runId; $('runMetaLabel').textContent = `${data.metadata.planner} · ${data.metadata.goal}`; status(`Открыта ветвь ${runId}.`); } catch(e) { status(e.message, true); } }
   async function compare() { try { $('comparison').innerHTML = '<div class="hint">Выполняю обе ветви из текущей контрольной точки…</div>'; const data = await api(`/api/runs/${active()}/compare`, {method:'POST', body:'{}'}); $('comparison').innerHTML = `<div class="compare-grid">${data.branches.map(branch => `<article class="branch"><h3>${esc(branch.observation.goal)} · ${esc(branch.run_id.split('/').pop())}</h3><strong>$${num(branch.summary.revenue_usd,2)}</strong><div class="hint">выручка · ${branch.summary.jobs_completed} завершено</div><dl><dt>Критические в срок</dt><dd>${branch.summary.critical_jobs_completed_on_time}</dd><dt>Просрочено</dt><dd>${branch.summary.jobs_due_missed}</dd><dt>Минимальный SOC</dt><dd>${num(branch.summary.minimum_soc_pct)}%</dd></dl><button class="button ghost branch-open" data-run="${esc(branch.run_id)}" style="margin-top:14px;width:100%">Открыть ветвь</button></article>`).join('')}</div><p class="hint" style="margin-top:12px">${esc(data.interpretation)} Δ revenue (revenue − priority): <b>${num(data.delta.revenue_usd,2)} USD</b></p>`; document.querySelectorAll('.branch-open').forEach(button => button.addEventListener('click', () => openBranch(button.dataset.run))); status('Сравнение двух независимых продолжений завершено.'); } catch(e) { $('comparison').innerHTML = ''; status(e.message, true); } }
   async function download() { try { const data = await api(`/api/runs/${active()}/result`); const blob = new Blob([JSON.stringify(data,null,2)], {type:'application/json'}); const url = URL.createObjectURL(blob), a = document.createElement('a'); a.href=url; a.download=`${currentRunId.replaceAll('/','-')}.json`; a.click(); URL.revokeObjectURL(url); } catch(e) { status(e.message, true); } }
-  document.querySelectorAll('[data-tab]').forEach(tab => tab.addEventListener('click', () => { document.querySelectorAll('[data-tab]').forEach(t => t.classList.toggle('active', t === tab)); ['jobs','trace','history'].forEach(name => $(name + 'Tab').hidden = name !== tab.dataset.tab); }));
-  document.querySelectorAll('[data-event]').forEach(button => button.addEventListener('click', () => { eventType = button.dataset.event; document.querySelectorAll('[data-event]').forEach(item => item.classList.toggle('active', item === button)); eventForm(); }));
+  document.querySelectorAll('[data-tab]').forEach(tab => tab.addEventListener('click', () => { const activeTab = document.querySelector('.tab.active'); if (activeTab === tab) return; const previous = activeTab ? $(activeTab.dataset.tab + 'Tab') : null; const next = $(tab.dataset.tab + 'Tab'); document.querySelectorAll('[data-tab]').forEach(t => t.classList.toggle('active', t === tab)); if (previous) { previous.classList.add('is-leaving'); setTimeout(() => { previous.hidden = true; previous.classList.remove('is-leaving'); next.hidden = false; next.classList.add('is-entering'); setTimeout(() => next.classList.remove('is-entering'), 430); }, 180); } else { next.hidden = false; next.classList.add('is-entering'); } }));
+  document.querySelectorAll('[data-event]').forEach(button => button.addEventListener('click', () => { if (eventType === button.dataset.event) return; eventType = button.dataset.event; document.querySelectorAll('[data-event]').forEach(item => item.classList.toggle('active', item === button)); eventForm(); animateRefresh($('eventForm')); }));
   $('scenario').addEventListener('change', scenarioChanged); $('createBtn').addEventListener('click', createRun); $('advanceOne').addEventListener('click', () => advance({steps:1})); $('advanceSix').addEventListener('click', () => advance({steps:6})); $('advanceUntil').addEventListener('click', () => advance({until_step: current?.available_actions?.scenario_steps || 0})); $('downloadBtn').addEventListener('click', download); $('sendEvent').addEventListener('click', sendEvent); $('explainBtn').addEventListener('click', explain); $('compareBtn').addEventListener('click', compare); $('jobFilter').addEventListener('input', () => current && renderJobs(current.observation.jobs || {})); $('showJson').addEventListener('click', () => { $('eventJson').hidden = !$('eventJson').hidden; if (!$('eventJson').hidden) $('eventJson').value = JSON.stringify(eventPayload(), null, 2); });
+  $('themeToggle').addEventListener('click', toggleTheme); syncThemeUI();
   eventForm(); loadScenarios().then(() => { try { const saved = JSON.parse(localStorage.getItem('cosmo-last-config') || 'null'); if (saved?.scenario_id && scenarios.some(item => item.id === saved.scenario_id)) { $('scenario').value = saved.scenario_id; $('planner').value = saved.planner || 'strategic'; $('goal').value = saved.goal || 'priority'; scenarioChanged(); } } catch (_) {} });
 </script>
 </body>
