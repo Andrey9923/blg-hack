@@ -194,6 +194,9 @@ class PlannerRuntime:
                 child.planner = StrategicPlanner(goal)
         child.run_metadata['planner'] = child._planner_name
         child.run_metadata['goal'] = child.goal
+        # A branch may change the algorithm; do not export the parent's version
+        # and parameters as if they described the continuation.
+        child.run_metadata.update(self._metadata(child._planner_name, child.goal, None))
         child.session.run_metadata = child.run_metadata
         return child
 
@@ -272,7 +275,8 @@ class PlannerRuntime:
         if planner == 'strategic':
             metadata = strategic_metadata(goal)
         else:
-            metadata = {'planner': 'baseline-v1', 'algorithm': 'baseline', 'goal': goal}
+            metadata = {'planner': 'baseline-v1', 'algorithm': 'baseline', 'goal': goal,
+                        'version': 'baseline-v1', 'parameters': {}}
         if supplied:
             extras = copy.deepcopy(supplied)
             for key in ('planner', 'algorithm', 'goal', 'version', 'parameters'):

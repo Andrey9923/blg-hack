@@ -3,6 +3,8 @@ from __future__ import annotations
 import argparse
 import copy
 import json
+import math
+from collections import Counter
 import re
 import threading
 import uuid
@@ -13,6 +15,7 @@ from typing import Any
 from urllib.parse import parse_qs, unquote, urlsplit
 
 from model.resource_env import load, validate
+from model.operations import digest, replay_episode
 from planner.runtime import PlannerRuntime
 
 
@@ -66,27 +69,94 @@ class RunStore:
             for scenario_id, scenario in self._scenarios.items()
         ]
 
+    @staticmethod
+    def _apply_settings(scenario: dict[str, Any], settings: dict[str, Any]) -> dict[str, Any]:
+        """Apply the small set of operator-facing experiment controls atomically."""
+        if not isinstance(settings, dict):
+            raise ValueError("settings must be a JSON object")
+        if set(settings) - {"satellite_id", "initial_soc_pct", "solar_multiplier", "job_id", "priority", "outage"}:
+            raise ValueError("Unknown experiment setting")
+        configured = copy.deepcopy(scenario)
+        satellites = {item["id"]: item for item in configured["satellites"]}
+        satellite_id = settings.get("satellite_id")
+        if satellite_id is not None and (not isinstance(satellite_id, str) or satellite_id not in satellites):
+            raise ValueError("settings.satellite_id refers to an unknown satellite")
+
+        if "initial_soc_pct" in settings:
+            if satellite_id is None or type(settings["initial_soc_pct"]) not in (int, float):
+                raise ValueError("initial_soc_pct requires satellite_id and a number")
+            if not 0 <= settings["initial_soc_pct"] <= 100:
+                raise ValueError("initial_soc_pct must be between 0 and 100")
+            satellites[satellite_id]["initial_soc_pct"] = settings["initial_soc_pct"]
+
+        if "solar_multiplier" in settings:
+            multiplier = settings["solar_multiplier"]
+            if type(multiplier) not in (int, float) or not math.isfinite(multiplier) or multiplier < 0:
+                raise ValueError("solar_multiplier must be a finite nonnegative number")
+            for sid in ([satellite_id] if satellite_id else satellites):
+                configured["environment"][sid]["solar_w"] = [
+                    value * multiplier for value in configured["environment"][sid]["solar_w"]
+                ]
+
+        if "job_id" in settings or "priority" in settings:
+            job_id = settings.get("job_id")
+            priority = settings.get("priority")
+            jobs = {job["id"]: job for job in configured["jobs"]}
+            if not isinstance(job_id, str) or job_id not in jobs:
+                raise ValueError("settings.job_id refers to an unknown job")
+            if type(priority) is not int or priority not in (1, 2, 3):
+                raise ValueError("settings.priority must be 1, 2 or 3")
+            jobs[job_id]["priority"] = priority
+
+        outage = settings.get("outage")
+        if outage is not None:
+            if not isinstance(outage, dict):
+                raise ValueError("settings.outage must be an object")
+            ids = outage.get("satellite_ids")
+            start = outage.get("start_step")
+            end = outage.get("end_step")
+            total = configured["time"]["steps"]
+            if (not isinstance(ids, list) or not ids or not all(isinstance(item, str) for item in ids)
+                    or len(ids) != len(set(ids))
+                    or not all(item in satellites for item in ids)):
+                raise ValueError("outage satellite_ids must contain known unique satellites")
+            if type(start) is not int or type(end) is not int or not 0 <= start < end <= total:
+                raise ValueError("outage interval must fit inside the scenario")
+            configured["failures"].extend(
+                {"satellite_id": item, "start_step": start, "end_step": end}
+                for item in ids
+            )
+        validate(configured)
+        if configured != scenario:
+            configured["meta"] = {
+                **configured["meta"],
+                "id": f"experiment-{digest(configured)[:12]}",
+                "title": f"{scenario['meta']['title']} · эксперимент",
+            }
+        return configured
+
+    def prepare_scenario(self, payload: dict[str, Any]) -> dict[str, Any]:
+        if not isinstance(payload, dict):
+            raise ValueError("Request body must be a JSON object")
+        if "scenario" in payload:
+            scenario = copy.deepcopy(payload["scenario"])
+            if len(json_bytes(scenario)) > MAX_SCENARIO_BYTES:
+                raise ValueError("scenario exceeds the 6 MiB size limit")
+        else:
+            scenario_id = payload.get("scenario_id")
+            if not isinstance(scenario_id, str) or scenario_id not in self._scenarios:
+                raise ValueError("Unknown built-in scenario_id")
+            scenario = copy.deepcopy(self._scenarios[scenario_id])
+        validate(scenario)
+        if "settings" in payload:
+            scenario = self._apply_settings(scenario, payload["settings"])
+        return scenario
+
     def create(self, payload: dict[str, Any]) -> PlannerRuntime:
         if not isinstance(payload, dict):
             raise ValueError("Request body must be a JSON object")
-        scenario_id = payload.get("scenario_id")
-        supplied_scenario = payload.get("scenario")
-        if supplied_scenario is not None:
-            encoded = json_bytes(supplied_scenario)
-            if len(encoded) > MAX_SCENARIO_BYTES:
-                raise ValueError("scenario exceeds the 6 MiB size limit")
-            if not isinstance(supplied_scenario, dict):
-                raise ValueError("scenario must be a JSON object")
-            scenario = copy.deepcopy(supplied_scenario)
-            scenario_id = scenario.get("meta", {}).get("id", scenario_id)
-            if not isinstance(scenario_id, str) or not scenario_id:
-                raise ValueError("scenario.meta.id or scenario_id is required")
-        elif isinstance(scenario_id, str) and scenario_id in self._scenarios:
-            scenario = copy.deepcopy(self._scenarios[scenario_id])
-        else:
-            raise ValueError("scenario_id must be one of P01_intro, P02_shift, P03_energy, P04_demand")
-        if not isinstance(scenario_id, str) or not ID_RE.fullmatch(scenario_id):
-            raise ValueError("scenario id contains unsupported characters")
+        scenario = self.prepare_scenario(payload)
+        scenario_id = scenario["meta"]["id"]
         planner = payload.get("planner", "strategic")
         goal = payload.get("goal", "priority")
         if not isinstance(planner, str) or planner not in ("baseline", "strategic"):
@@ -117,14 +187,19 @@ class RunStore:
         return run, lock
 
     def add_fork(self, parent_id: str, branch: PlannerRuntime) -> None:
+        self.add_forks([branch])
+
+    def add_forks(self, branches: list[PlannerRuntime]) -> None:
         with self._lock:
-            if len(self._runs) >= MAX_RUNS:
+            if len(self._runs) + len(branches) > MAX_RUNS:
                 raise ValueError("in-memory run limit reached; restart the server to clear runs")
-            run_id = branch.run_metadata.get("run_id")
-            if not isinstance(run_id, str) or run_id in self._runs:
+            ids = [branch.run_metadata.get("run_id") for branch in branches]
+            if (any(not isinstance(run_id, str) or run_id in self._runs for run_id in ids)
+                    or len(set(ids)) != len(ids)):
                 raise ValueError("fork generated a duplicate run id")
-            self._runs[run_id] = branch
-            self._locks[run_id] = threading.RLock()
+            for run_id, branch in zip(ids, branches):
+                self._runs[run_id] = branch
+                self._locks[run_id] = threading.RLock()
 
 
 def available_actions(run: PlannerRuntime) -> dict[str, Any]:
@@ -142,13 +217,43 @@ def available_actions(run: PlannerRuntime) -> dict[str, Any]:
 
 
 def run_view(run: PlannerRuntime) -> dict[str, Any]:
+    trace = run.session.env.trace
+    telemetry: dict[str, list[dict[str, Any]]] = {}
+    for row in trace:
+        telemetry.setdefault(row["satellite_id"], []).append({
+            "step": row["step"],
+            "satellite_id": row["satellite_id"],
+            "energy_wh": row["energy_after_wh"],
+            "temp_c": row["temp_after_c"],
+            "executed": row["executed"],
+            "reason": row["reason"],
+            "requested": copy.deepcopy(row["requested"]),
+            "job_id": row.get("requested", {}).get("job_id") if isinstance(row.get("requested"), dict) else None,
+        })
     return {
         "run_id": run.run_metadata.get("run_id"),
         "observation": run.observation(),
         "summary": run.summary(),
         "metadata": copy.deepcopy(run.run_metadata),
-        "history": copy.deepcopy(run.history),
+        "history": [
+            {**copy.deepcopy({key: value for key, value in entry.items() if key not in ("commands", "trace")}),
+             **({"command_count": len(entry["commands"])} if "commands" in entry else {})}
+            for entry in run.history
+        ],
         "available_actions": available_actions(run),
+        "telemetry": telemetry,
+        "trace_count": len(trace),
+        "satellite_specs": copy.deepcopy(run.env.sats),
+        "model": copy.deepcopy(run.env.s["model"]),
+        "time": copy.deepcopy(run.env.s["time"]),
+        "scenario_title": run.initial_scenario["meta"]["title"],
+        "events": copy.deepcopy(run.events),
+        "utilization": {
+            sid: (sum(row["executed"] == "job" for row in rows) / run.current_step
+                  if run.current_step else None)
+            for sid in run.env.sats
+            for rows in [telemetry.get(sid, [])]
+        },
     }
 
 
@@ -194,6 +299,42 @@ def explain_trace(run: PlannerRuntime, step: int, satellite_id: str) -> dict[str
         "ground_capacity": "The requested downlink was not executed because the per-step ground capacity was already used.",
         "duplicate_job_in_step": "The requested job was not executed because another satellite already used it in this step.",
     }
+    # Reconstruct the information available before this specific decision, not
+    # today's environment (which may include later outages or added jobs).
+    checkpoint = replay_episode(
+        run.initial_scenario,
+        [event for event in run.events if event["at_step"] <= step],
+        [command for command in run.commands if command["step"] < step],
+        step,
+    )
+    env = checkpoint.env
+    candidates = []
+    for candidate in env.jobs.values():
+        if (satellite_id in candidate["eligible_satellites"]
+                and candidate["completed_step"] is None
+                and candidate["release_step"] <= step < candidate["deadline_step"]):
+            allowed, candidate_reason, _ = env.can_execute(
+                satellite_id, {"action": "job", "job_id": candidate["id"]})
+            candidates.append({"id": candidate["id"], "reason": candidate_reason,
+                               "locally_allowed": allowed, "priority": candidate["priority"],
+                               "remaining_steps": candidate["remaining_steps"],
+                               "deadline_step": candidate["deadline_step"]})
+    candidate_counts = dict(Counter(candidate["reason"] for candidate in candidates))
+    if not env.available(satellite_id):
+        decision = "Аппарат недоступен на этом шаге по полученному к этому моменту интервалу отказа."
+    elif row["executed"] == "calibrate":
+        decision = "Планировщик выполнил обслуживание: истёк срок калибровки, без неё полезная работа не допускается."
+    elif reason == "idle":
+        if not candidates:
+            decision = "На этом шаге нет открытых незавершённых заданий с этим допустимым исполнителем."
+        elif not any(candidate["locally_allowed"] for candidate in candidates):
+            decision = "Доступные задания не прошли локальные проверки. Причины перечислены ниже."
+        else:
+            decision = "Есть локально допустимая работа. Назначения ограничены общей ёмкостью downlink и занятостью заданий другими аппаратами; это выбор планировщика, а не доказательство невозможности."
+    elif reason == "accepted":
+        decision = "Назначенная операция прошла проверки модели и общих ресурсов. Порядок выбора заданий задаётся целью и версией планировщика."
+    else:
+        decision = "Модель отклонила запрос и выполнила ожидание. Причина отказа относится только к этой операции на этом шаге."
     return {
         "run_id": run.run_metadata.get("run_id"),
         "step": step,
@@ -216,6 +357,16 @@ def explain_trace(run: PlannerRuntime, step: int, satellite_id: str) -> dict[str
         },
         "calibration": {"age_steps": row.get("calibration_age_steps")},
         "job": job,
+        "decision": decision,
+        "known_at_step": {
+            "events": copy.deepcopy(checkpoint.events),
+            "state": copy.deepcopy(env.state[satellite_id]),
+            "available": env.available(satellite_id),
+            "downlink_available": env.s["environment"][satellite_id]["downlink_available"][step],
+            "relay_available": env.s["environment"][satellite_id]["relay_available"][step],
+            "candidate_counts": candidate_counts,
+            "candidates": candidates,
+        },
         "note": "This is an explanation of the recorded model decision at this step, not a proof of objective impossibility.",
     }
 
@@ -277,6 +428,45 @@ class OperatorService:
             self.store.add_fork(run_id, child)
             return run_view(child)
 
+    def compare(self, run_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        """Finish two independent continuations from the same actual checkpoint."""
+        parent, parent_lock = self.store.get(run_id)
+        if not isinstance(payload, dict):
+            raise ValueError("Request body must be a JSON object")
+        first_goal = payload.get("first_goal", "priority")
+        second_goal = payload.get("second_goal", "revenue")
+        if first_goal not in ("priority", "revenue") or second_goal not in ("priority", "revenue"):
+            raise ValueError("comparison goals must be 'priority' or 'revenue'")
+        if first_goal == second_goal:
+            raise ValueError("comparison goals must be different")
+        with parent_lock:
+            target = payload.get("until_step", parent.env.s["time"]["steps"])
+            if type(target) is not int or not parent.current_step <= target <= parent.env.s["time"]["steps"]:
+                raise ValueError("until_step must be between the checkpoint and the end of the scenario")
+            checkpoint = {"step": parent.current_step, "state_digest": parent.state_digest()}
+            base = f"comparison-{uuid.uuid4().hex[:8]}"
+            first = parent.fork(f"{base}-a", goal=first_goal)
+            second = parent.fork(f"{base}-b", goal=second_goal)
+            self.store.add_forks([first, second])
+        first_run, first_lock = self.store.get(first.run_metadata["run_id"])
+        second_run, second_lock = self.store.get(second.run_metadata["run_id"])
+        with first_lock:
+            first_run.run_until(target)
+            first_view = run_view(first_run)
+        with second_lock:
+            second_run.run_until(target)
+            second_view = run_view(second_run)
+        left = first_view["summary"]
+        right = second_view["summary"]
+        metrics = ("jobs_completed", "jobs_due_missed", "critical_jobs_completed_on_time", "revenue_usd", "minimum_soc_pct")
+        return {
+            "source_run_id": run_id,
+            "checkpoint": checkpoint,
+            "branches": [first_view, second_view],
+            "delta": {key: round(right[key] - left[key], 6) for key in metrics},
+            "interpretation": "Сравнение выполнено на одном состоянии и одном полученном префиксе событий.",
+        }
+
     def explain(self, run_id: str, query: dict[str, list[str]]) -> dict[str, Any]:
         run, lock = self.store.get(run_id)
         try:
@@ -334,6 +524,9 @@ class OperatorHandler(BaseHTTPRequestHandler):
         if method == "GET" and path == "/api/scenarios":
             self._send(HTTPStatus.OK, {"scenarios": self.service.store.scenario_list()})
             return
+        if method == "POST" and path == "/api/scenarios/prepare":
+            self._send(HTTPStatus.OK, {"scenario": self.service.store.prepare_scenario(self._read_json())})
+            return
         if path == "/api/runs" and method == "POST":
             run = self.service.store.create(self._read_json())
             self._send(HTTPStatus.CREATED, run_view(run))
@@ -348,6 +541,7 @@ class OperatorHandler(BaseHTTPRequestHandler):
             "/events": "event",
             "/goal": "goal",
             "/fork": "fork",
+            "/compare": "compare",
             "/result": "result",
             "/explain": "explain",
         }
@@ -372,7 +566,7 @@ class OperatorHandler(BaseHTTPRequestHandler):
         if operation == "explain" and method == "GET":
             self._send(HTTPStatus.OK, self.service.explain(run_id, parse_qs(parsed.query)))
             return
-        if method == "POST" and operation in ("advance", "event", "goal", "fork"):
+        if method == "POST" and operation in ("advance", "event", "goal", "fork", "compare"):
             payload = self._read_json()
             result = getattr(self.service, operation)(run_id, payload)
             self._send(HTTPStatus.CREATED if operation == "fork" else HTTPStatus.OK, result)

@@ -128,6 +128,28 @@ class WebApiTests(unittest.TestCase):
         self.assertEqual(explanation['outcome_category'], 'resource_deficit')
         self.assertEqual(explanation['reason'], 'energy_reserve')
 
+    def test_experiment_settings_and_comparison_share_checkpoint(self) -> None:
+        status, body = self.request("POST", "/api/runs", {
+            "scenario_id": "P01_intro",
+            "settings": {
+                "satellite_id": "S01",
+                "initial_soc_pct": 42,
+                "solar_multiplier": 0.8,
+                "job_id": "JOB-0001",
+                "priority": 1,
+                "outage": {"satellite_ids": ["S01"], "start_step": 10, "end_step": 12},
+            },
+        })
+        self.assertEqual(status, 201)
+        run_id = body["run_id"]
+        self.assertEqual(body["observation"]["state"]["S01"]["energy_wh"], 58.8)
+        self.assertTrue(body["metadata"]["scenario_id"].startswith("experiment-"))
+        self.request("POST", f"/api/runs/{run_id}/advance", {"steps": 1})
+        status, comparison = self.request("POST", f"/api/runs/{run_id}/compare", {})
+        self.assertEqual(status, 200)
+        self.assertEqual(comparison["checkpoint"]["step"], 1)
+        self.assertEqual(len(comparison["branches"]), 2)
+
 
 if __name__ == "__main__":
     unittest.main()
